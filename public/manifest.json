@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Oteiting Floating Chatbox",
+  "version": "1.0",
+  "description": "A simple floating chatbox Vue app as a Chrome Extension.",
+  "permissions": [
+    "storage"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["assets/index.css"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
