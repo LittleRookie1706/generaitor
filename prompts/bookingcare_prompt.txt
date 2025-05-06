@@ -1,0 +1,19 @@
+Select the appointment type: choose "Book for myself" 
+Enter  fullname in the name input field  ("donald trump").
+Select gender by choosing  "Male"
+
+Enter contact phone number in the phone number field.  ("000000002").
+
+Enter email address in the email field ("tommy@otani.com").
+
+Enter birth year in the date of birth field (2002).
+
+Select "Tỉnh Phú Yên" in province list
+
+Select "Huyện Phú Hòa" in district list.
+
+Enter full address in the address field. (Nguyễn Văn Linh, Phường Thanh Trung)
+
+Enter the reason for the appointment in the "Reason for visit" field. (abcd)
+
+Click button "Xác nhận đặt khám"
