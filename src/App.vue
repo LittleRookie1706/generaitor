@@ -137,13 +137,13 @@ const formattedTimestamp = (ts) => {
 //           1. Analyze the user command and the provided DOM structure.
 //           2. Identify the target element based on the command.
 //           3. Generate the appropriate Cypress command to interact with the element.
-//           4. IMPORTANT: For SELECT elements, especially when they appear to be enhanced with Select2 or similar libraries 
+//           4. IMPORTANT: For SELECT elements, especially when they appear to be enhanced with Select2 or similar libraries
 //              (check for classes like 'select2-hidden-accessible'), always use the force approach:
 //              cy.get('selector').select('value', { force: true })
 //           5. For select commands, identify both the visible text and the actual option value from the DOM.
 //           6. Always add verification steps after actions.
 //           7. Output ONLY the Cypress code without any commentary. Do NOT include any explanations or markdown.
-          
+
 //           SPECIFIC HANDLING FOR SELECT COMMANDS:
 //           - When a user command mentions selecting an option (like "select X in Y dropdown"):
 //             1. Find the select element in the DOM
@@ -267,7 +267,7 @@ const formattedTimestamp = (ts) => {
 //     formattedCypressCode = `describe('User Commands Test', () => {
 //   it('should execute user commands', () => {
 //     cy.visit('your-website-url'); // Replace with actual URL
-    
+
 //     ${formattedCypressCode.replace(/^/gm, "    ")}
 //   });
 // });`;
@@ -283,6 +283,8 @@ const formattedTimestamp = (ts) => {
 
 //   isLoading.value = false;
 // };
+
+//==============================
 
 const sendMessage = async () => {
   const userText = newMessage.value.trim();
@@ -337,7 +339,7 @@ const sendMessage = async () => {
           5.  For SELECT elements, especially when they appear to be enhanced with Select2 or similar libraries (check for classes like 'select2-hidden-accessible'), always use the force approach:
               cy.get('selector').select('value', { force: true })
           6.  For select commands, identify both the visible text and the actual option value from the DOM.
-          
+
           SPECIFIC HANDLING FOR SELECT COMMANDS:
            - When a user command mentions selecting an option (like "select X in Y dropdown"):
              1. Find the select element in the DOM
@@ -433,8 +435,931 @@ const sendMessage = async () => {
   isLoading.value = false;
 };
 
+// const sendMessage2 = async () => {
+//   const userText = newMessage.value.trim();
+//   if (
+//     userText === "" ||
+//     isLoading.value ||
+//     !isApiKeySet.value ||
+//     !modelInstance.value
+//   ) {
+//     if (!isApiKeySet.value) {
+//       alert("Please set your Gemini API Key first.");
+//     }
+//     return;
+//   }
+
+//   // Handle both explicit newlines and "\n" as text
+//   const commands = userText
+//     .replace(/\\n/g, "\n") // Replace "\n" text with actual newlines
+//     .split("\n")
+//     .map((cmd) => cmd.trim())
+//     .filter((cmd) => cmd !== ""); // Split into commands
+
+//   if (commands.length === 0) {
+//     return; // No commands to process
+//   }
+
+//   messages.value.push({
+//     id: Date.now(),
+//     text: `Commands: ${userText}`,
+//     sender: "user",
+//     timestamp: Date.now(),
+//   });
+
+//   newMessage.value = "";
+//   isLoading.value = true;
+//   let combinedCypressCode = "";
+
+//   console.log("Detected commands:", commands); // Debug log
+
+//   // Process each command separately
+//   for (const commandText of commands) {
+//     try {
+//       const currentDOM = document.body.outerHTML;
+//       // Before processing with the AI, explicitly extract any data-testid from the command
+//       let specifiedDataTestId = null;
+//       let specifiedClass = null;
+
+//       // Extract data-testid if present
+//       const dataTestIdMatch = commandText.match(
+//         /data-testid\s*=\s*["']([^"']+)["']/i
+//       );
+//       if (dataTestIdMatch && dataTestIdMatch[1]) {
+//         specifiedDataTestId = dataTestIdMatch[1];
+//         console.log("Extracted data-testid:", specifiedDataTestId);
+//       }
+
+//       // Extract class if present
+//       const classMatch =
+//         commandText.match(/class\s*["']([^"']+)["']/i) ||
+//         commandText.match(/with class\s+([^\s]+)/i);
+//       if (classMatch && classMatch[1]) {
+//         specifiedClass = classMatch[1];
+//         console.log("Extracted class:", specifiedClass);
+//       }
+
+//       const prompt = `
+//           Your task is to generate Cypress autotest code based on the user's command and the provided DOM structure.
+
+//           Instructions:
+//           1.  FIRST, carefully analyze the user command and extract all details:
+//               - What action to perform (click, type, select, etc.)
+//               - What element to target (button, link, input, etc.)
+//               - Any text content to match ("Xem thêm", "Add to cart", etc.)
+//               - Any attributes mentioned (class, data-testid, id, etc.)
+//               - Any ordinal position mentioned (first, second, third, etc.)
+//           2.  SECOND, search the DOM for elements matching ALL the criteria specified
+//           3.  THIRD, generate appropriate Cypress code
+//           4.  Output ONLY the Cypress code. Do NOT include any other text, explanations, or markdown.
+//           5.  For SELECT elements, especially when they appear to be enhanced with Select2 or similar libraries (check for classes like 'select2-hidden-accessible'), always use the force approach:
+//               cy.get('selector').select('value', { force: true })
+          
+//           SPECIFIC HANDLING FOR SELECT COMMANDS:
+//            - When a user command mentions selecting an option (like "select X in Y dropdown"):
+//              1. Find the select element in the DOM
+//              2. Look for the option with text matching what the user specified
+//              3. Get the VALUE attribute of that option (not just the display text)
+//              4. Use .select(VALUE, { force: true }) in the Cypress code
+//              5. Add a verification step using .should('have.value', VALUE)
+//           Example:
+//           User Command: select "Tỉnh An Giang" in province dropdown
+//            DOM: (contains <select data-testid="booking-province-droplist"><option value="89">Tỉnh An Giang</option>...)
+//            Cypress Code:
+//            cy.get('[data-testid="booking-province-droplist"]').select('89', { force: true });
+//            cy.get('[data-testid="booking-province-droplist"]').should('have.value', '89');
+          
+//           SPECIFIC HANDLING FOR ELEMENTS WITH THE SAME TEXT/CONTENT:
+//           - When a user specifies an element with specific attributes or data-testid:
+//             1. ALWAYS prioritize the exact attribute mentioned in the command
+//             2. Make sure to match the text content mentioned in the command
+//             3. Use a combination of attribute selectors and .contains() for more precise targeting
+          
+//           IMPORTANT:
+//           - If the user mentions a specific data-testid="X", you MUST use that EXACT data-testid in your selector
+//           - If the user mentions a specific class="X", you MUST use that EXACT class in your selector
+//           - NEVER substitute or ignore these specific attributes requested by the user
+          
+//           Examples:
+//           User Command: click second button Xem thêm
+//           Cypress Code:
+//           cy.contains('button', 'Xem thêm').eq(1).click();
+          
+//           User Command: click Xem thêm link with data-testid="button-show-more"
+//           Cypress Code:
+//           cy.get('[data-testid="button-show-more"]').contains('Xem thêm').click();
+          
+//           INCORRECT (would be wrong):
+//           cy.get('[data-testid="some-other-id"]').contains('Xem thêm').click();
+          
+//           User Command: click on the link Xem thêm with class text-primary
+//           Cypress Code:
+//           cy.get('.text-primary').contains('Xem thêm').click();
+          
+//           User Command: click the div Xem thêm with data-testid="expandable-html-view-expand-button"
+//           Cypress Code:
+//           cy.get('[data-testid="expandable-html-view-expand-button"]').contains('Xem thêm').click();
+          
+//           IMPORTANT EXAMPLE - CORRECT:
+//           User Command: click the link Xem thêm with data-testid="button-show-more"
+//           Cypress Code:
+//           cy.get('[data-testid="button-show-more"]').contains('Xem thêm').click();
+          
+//           IMPORTANT EXAMPLE - INCORRECT (do not do this):
+//           User Command: click the link Xem thêm with data-testid="button-show-more"
+//           Cypress Code:
+//           cy.get('[data-testid="expandable-html-view-expand-button"]').contains('Xem thêm').click();
+          
+//           User Command: click a time slot button (eg: 09:30 - 10:00)
+//           DOM:
+//           \`\`\`html
+//           <button class="time-slot" data-time="09:30-10:00">09:30 - 10:00</button>
+//           \`\`\`
+//           Cypress Code:
+//           cy.get('button.time-slot[data-time="09:30-10:00"]').click();
+
+//           ---
+//           User Command: ${commandText}
+//           ---
+//           DOM:
+//           \`\`\`html
+//           ${currentDOM}
+//           \`\`\`
+//           Cypress Code:`;
+
+//       const chat = modelInstance.value.startChat({
+//         generationConfig: {
+//           temperature: 0, // Use lower temperature for more deterministic responses
+//           topP: 0.8,
+//           topK: 40,
+//         },
+//       });
+//       const result = await chat.sendMessage(prompt);
+//       const response = await result.response;
+//       let cypressCode = (await response.text()).trim();
+
+//       console.log("Raw AI response:", cypressCode);
+
+//       // Validate and correct the generated code if necessary
+//       if (specifiedDataTestId) {
+//         // If the user specified a data-testid but the AI didn't use it, force it
+//         if (!cypressCode.includes(`[data-testid="${specifiedDataTestId}"]`)) {
+//           console.log("AI didn't use the specified data-testid. Correcting...");
+//           // Replace the incorrect selector with the correct one using the specified data-testid
+//           cypressCode = `cy.get('[data-testid="${specifiedDataTestId}"]').contains('Xem thêm').click();`;
+//         }
+//       }
+
+//       if (specifiedClass && !cypressCode.includes(specifiedClass)) {
+//         // If the user specified a class but the AI didn't use it, force it
+//         console.log("AI didn't use the specified class. Correcting...");
+//         cypressCode = `cy.get('.${specifiedClass}').contains('Xem thêm').click();`;
+//       }
+
+//       // Clean potential Markdown fences
+//       if (cypressCode.startsWith("```")) {
+//         cypressCode = cypressCode
+//           .replace(/```.*?\n/, "")
+//           .replace(/\n```/, "")
+//           .trim();
+//       }
+
+//       // Add individual command response to the messages
+//       messages.value.push({
+//         id: Date.now() + Math.random(),
+//         text: `Command: ${commandText}\nCypress Code: ${cypressCode}`,
+//         sender: "bot",
+//         timestamp: Date.now(),
+//       });
+
+//       // Add a semicolon if needed and ensure each command is on a new line
+//       if (!cypressCode.trim().endsWith(";")) {
+//         cypressCode = cypressCode.trim() + ";";
+//       }
+//       combinedCypressCode += cypressCode + "\n"; // Append to combined code
+//     } catch (apiError) {
+//       console.error("Gemini API error:", apiError);
+//       const errorMessage = `// Error generating code for command: ${commandText}\n// ${apiError.message}`;
+
+//       // Add error message for this specific command
+//       messages.value.push({
+//         id: Date.now() + Math.random(),
+//         text: `Command: ${commandText}\nError: ${apiError.message}`,
+//         sender: "bot",
+//         timestamp: Date.now(),
+//       });
+
+//       combinedCypressCode += errorMessage + "\n";
+//     }
+//   }
+
+//   // Format the combined Cypress code for better readability
+//   const formattedCypressCode = combinedCypressCode
+//     .split("\n")
+//     .filter((line) => line.trim() !== "")
+//     .map((line) => line.trim())
+//     .join("\n");
+
+//   // Add the final combined message with all Cypress code
+//   messages.value.push({
+//     id: Date.now() + Math.random(),
+//     text: `Complete Cypress Test:\n${formattedCypressCode}`,
+//     sender: "bot",
+//     timestamp: Date.now(),
+//   });
+
+//   isLoading.value = false;
+// };
+
 // =================================
 
+// last version ================
+
+// remove hidden + disabled elements
+const getCleanedDOM = (root) => {
+  const clone = root.cloneNode(true);
+  clone.querySelectorAll('[disabled], [hidden], [aria-hidden="true"], [style*="display:none"]').forEach(el => el.remove());
+  return clone.outerHTML;
+};
+
+// Helper to extract a relevant DOM section from the command text
+const getRelevantDOM = (commandText) => {
+  const match = commandText.match(/inLocation\s+([a-zA-Z0-9-_]+)/i);
+  if (match && match[1]) {
+    const selector = '.' + match[1].replace(/[^a-zA-Z0-9-_]/g, '');
+    const section = document.querySelector(selector);
+    if (section) {
+      return getCleanedDOM(section);
+    }
+  }
+  return getCleanedDOM(document.body);
+};
+
+const sendMessage2 = async () => {
+  const userText = newMessage.value.trim();
+  if (
+    userText === "" ||
+    isLoading.value ||
+    !isApiKeySet.value ||
+    !modelInstance.value
+  ) {
+    if (!isApiKeySet.value) {
+      alert("Please set your Gemini API Key first.");
+    }
+    return;
+  }
+
+  const commands = userText
+    .split("\n")
+    .map((cmd) => cmd.trim())
+    .filter((cmd) => cmd !== "");
+
+  if (commands.length === 0) return;
+
+  messages.value.push({
+    id: Date.now(),
+    text: `Commands: ${userText}`,
+    sender: "user",
+    timestamp: Date.now(),
+  });
+
+  newMessage.value = "";
+  isLoading.value = true;
+
+  for (const commandText of commands) {
+    try {
+      const currentDOM = getRelevantDOM(commandText);
+
+      const prompt = `
+Your task is to act as a DOM interaction planner. Analyze the user command and the provided DOM structure. Identify the target element and the intended action.
+
+Instructions:
+1. Find the target element based on the Command and DOM.
+2. Determine the best CSS selector using this priority: id > data-testid > class > tag+attributes.
+3. Identify the action: "click", "type", "focus", "submit", "select".
+4. For "select" action, determine if it's a regular select or Select2 dropdown (has class "select2-hidden-accessible").
+5. For Select2, identify the option value from the DOM (not just the display text).
+6. If action is "type" or "select", extract the value from the Command.
+7. IMPORTANT: If the Command specifies a particular element among many similar ones (e.g., "the second button", "the last checkbox", "the button next to the user icon"), determine the correct index or relative position.
+
+Output Format:
+Return ONLY a single-line JSON object. Do NOT include any other text, explanations, or markdown.
+Structure:
+{
+  "selector": "<CSS selector string>",
+  "action": "<action name>",
+  "value": "<value string>", 
+  "isSelect2": true/false,   
+  "optionValue": "<option value attribute>",
+  "index": 0,
+  "positionHint": "next-to:selector"
+}
+
+---
+Command: ${commandText}
+---
+DOM:
+\`\`\`html
+${currentDOM}
+\`\`\`
+---
+JavaScript Code:`;
+
+      const chat = modelInstance.value.startChat();
+      const result = await chat.sendMessage(prompt);
+      const response = await result.response;
+      let aiResponseText = (await response.text()).trim();
+
+      if (aiResponseText.startsWith("```json")) {
+        aiResponseText = aiResponseText.substring(7);
+        if (aiResponseText.endsWith("```")) {
+          aiResponseText = aiResponseText.substring(
+            0,
+            aiResponseText.length - 3
+          );
+        }
+        aiResponseText = aiResponseText.trim();
+      }
+
+      try {
+        const actionData = JSON.parse(aiResponseText);
+
+        if (actionData.error) {
+          messages.value.push({
+            id: Date.now() + 1,
+            text: `AI Error: ${actionData.error}`,
+            sender: "bot",
+            timestamp: Date.now(),
+          });
+        } else if (actionData.selector && actionData.action) {
+          const allMatchingElements = document.querySelectorAll(actionData.selector);
+          let targetElement = null;
+
+          if (allMatchingElements.length === 0) {
+            messages.value.push({
+              id: Date.now() + 1,
+              text: `Error: No elements found for selector: ${actionData.selector}`,
+              sender: "bot",
+              timestamp: Date.now(),
+            });
+            continue;
+          } else if (allMatchingElements.length > 1) {
+            if (
+              typeof actionData.index === "number" &&
+              actionData.index >= 0 &&
+              actionData.index < allMatchingElements.length
+            ) {
+              targetElement = allMatchingElements[actionData.index];
+            } else if (actionData.positionHint?.startsWith("next-to:")) {
+              const nearbySelector = actionData.positionHint.substring(8);
+              const referenceElement = document.querySelector(nearbySelector);
+
+              if (referenceElement) {
+                let closestElement = null;
+                let closestDistance = Infinity;
+                const refRect = referenceElement.getBoundingClientRect();
+                const refMidX = refRect.left + refRect.width / 2;
+                const refMidY = refRect.top + refRect.height / 2;
+
+                allMatchingElements.forEach((element) => {
+                  const rect = element.getBoundingClientRect();
+                  const midX = rect.left + rect.width / 2;
+                  const midY = rect.top + rect.height / 2;
+                  const distance = Math.sqrt(
+                    Math.pow(midX - refMidX, 2) + Math.pow(midY - refMidY, 2)
+                  );
+
+                  if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestElement = element;
+                  }
+                });
+
+                targetElement = closestElement;
+              }
+            } else {
+              targetElement = allMatchingElements[0];
+            }
+          } else {
+            targetElement = allMatchingElements[0];
+          }
+
+          if (!targetElement) {
+            messages.value.push({
+              id: Date.now() + 1,
+              text: `Error: Could not determine which element to interact with`,
+              sender: "bot",
+              timestamp: Date.now(),
+            });
+          } else {
+            let actionDescription = `${actionData.action} on ${actionData.selector}`;
+            if (typeof actionData.index === "number") {
+              actionDescription += ` (element #${actionData.index + 1})`;
+            }
+
+            switch (actionData.action.toLowerCase()) {
+              case "click":
+                targetElement.click();
+                break;
+
+              case "select":
+                if (targetElement instanceof HTMLSelectElement) {
+                  let optionValue = null;
+
+                  // If we have a specific option value from AI
+                  if (actionData.optionValue) {
+                    optionValue = actionData.optionValue;
+                  }
+                  // Otherwise, try to find the option by text
+                  else if (actionData.value) {
+                    const options = Array.from(targetElement.options);
+                    const matchingOption = options.find((option) =>
+                      option.textContent.trim().includes(actionData.value)
+                    );
+                    if (matchingOption) {
+                      optionValue = matchingOption.value;
+                    }
+                  }
+
+                  if (optionValue !== null) {
+                    // Set the value directly (using force approach)
+                    targetElement.value = optionValue;
+                    actionDescription += ` with value "${optionValue}" (${
+                      actionData.value || ""
+                    })`;
+
+                    // Trigger events to notify frameworks like Select2
+                    // Use force approach by manually dispatching events
+                    targetElement.dispatchEvent(
+                      new Event("change", { bubbles: true })
+                    );
+
+                    // For Select2 specifically, we might need additional triggers
+                    if (
+                      actionData.isSelect2 ||
+                      targetElement.classList.contains(
+                        "select2-hidden-accessible"
+                      )
+                    ) {
+                      // Try to update the Select2 display
+                      if (
+                        window.jQuery &&
+                        window.jQuery(targetElement).data("select2")
+                      ) {
+                        window.jQuery(targetElement).trigger("change");
+                      }
+
+                      actionDescription += " (Select2 force approach)";
+                    }
+                  } else {
+                    throw new Error(
+                      `Option "${actionData.value}" not found in select element.`
+                    );
+                  }
+                } else {
+                  throw new Error(`'select' action requires a SELECT element.`);
+                }
+                break;
+
+              // case "select":
+              //   if (targetElement instanceof HTMLSelectElement) {
+              //     let optionValue = actionData.optionValue || null;
+              //     if (!optionValue && actionData.value) {
+              //       const options = Array.from(targetElement.options);
+              //       const matchingOption = options.find((option) =>
+              //         option.textContent.trim().includes(actionData.value)
+              //       );
+              //       if (matchingOption) {
+              //         optionValue = matchingOption.value;
+              //       }
+              //     }
+
+              //     if (optionValue !== null) {
+              //       targetElement.value = optionValue;
+              //       actionDescription += ` with value "${optionValue}" (${actionData.value || ""})`;
+              //       targetElement.dispatchEvent(new Event("change", { bubbles: true }));
+
+              //       if (
+              //         actionData.isSelect2 ||
+              //         targetElement.classList.contains("select2-hidden-accessible")
+              //       ) {
+              //         if (window.jQuery && window.jQuery(targetElement).data("select2")) {
+              //           window.jQuery(targetElement).trigger("change");
+              //         }
+              //         actionDescription += " (Select2 force approach)";
+              //       }
+              //     } else {
+              //       throw new Error(`Option "${actionData.value}" not found in select element.`);
+              //     }
+              //   } else {
+              //     throw new Error(`'select' action requires a SELECT element.`);
+              //   }
+              //   break;
+
+              case "type":
+                if (typeof actionData.value === "string") {
+                  if (
+                    targetElement instanceof HTMLInputElement ||
+                    targetElement instanceof HTMLTextAreaElement
+                  ) {
+                    targetElement.value = actionData.value;
+                    actionDescription += ` with value "${actionData.value}"`;
+                    targetElement.dispatchEvent(new Event("input", { bubbles: true }));
+                    targetElement.dispatchEvent(new Event("change", { bubbles: true }));
+                  } else {
+                    throw new Error(`Element for 'type' is not an input or textarea.`);
+                  }
+                } else {
+                  throw new Error(`'type' action requires a 'value' string.`);
+                }
+                break;
+
+              case "focus":
+                targetElement.focus();
+                break;
+
+              case "submit":
+                if (targetElement instanceof HTMLFormElement) {
+                  targetElement.submit();
+                } else if (targetElement.form) {
+                  targetElement.form.submit();
+                } else {
+                  throw new Error(`Cannot 'submit' element directly, and it's not part of a form.`);
+                }
+                break;
+
+              default:
+                throw new Error(`Unsupported action: ${actionData.action}`);
+            }
+
+            messages.value.push({
+              id: Date.now() + 1,
+              text: `Executed: ${actionDescription}`,
+              sender: "bot",
+              timestamp: Date.now(),
+            });
+          }
+        } else {
+          throw new Error("Invalid JSON structure received from AI.");
+        }
+      } catch (parseOrExecError) {
+        console.error("JSON parsing or DOM execution error:", parseOrExecError);
+        messages.value.push({
+          id: Date.now() + 1,
+          text: `Execution Error: ${parseOrExecError.message}. AI Response: ${aiResponseText}`,
+          sender: "bot",
+          timestamp: Date.now(),
+        });
+      }
+    } catch (apiError) {
+      console.error("Gemini API error:", apiError);
+      messages.value.push({
+        id: Date.now() + 1,
+        text: "Error communicating with AI. Please check API key and console.",
+        sender: "bot",
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  isLoading.value = false;
+};
+
+
+// select dropdown OK =====================
+
+// const sendMessage = async () => {
+//   const userText = newMessage.value.trim();
+//   if (
+//     userText === "" ||
+//     isLoading.value ||
+//     !isApiKeySet.value ||
+//     !modelInstance.value
+//   ) {
+//     if (!isApiKeySet.value) {
+//       alert("Please set your Gemini API Key first.");
+//     }
+//     return;
+//   }
+
+//   const commands = userText
+//     .split("\n")
+//     .map((cmd) => cmd.trim())
+//     .filter((cmd) => cmd !== "");
+//   if (commands.length === 0) {
+//     return;
+//   }
+
+//   messages.value.push({
+//     id: Date.now(),
+//     text: `Commands: ${userText}`,
+//     sender: "user",
+//     timestamp: Date.now(),
+//   });
+
+//   newMessage.value = "";
+//   isLoading.value = true;
+
+//   for (const commandText of commands) {
+//     try {
+//       const currentDOM = document.body.outerHTML;
+//       const prompt = `
+// Your task is to act as a DOM interaction planner. Analyze the user command and the provided DOM structure. Identify the target element and the intended action.
+
+// Instructions:
+// 1. Find the target element based on the Command and DOM.
+// 2. Determine the best CSS selector using this priority: id > data-testid > class > tag+attributes.
+// 3. Identify the action: "click", "type", "focus", "submit", "select".
+// 4. For "select" action, determine if it's a regular select or Select2 dropdown (has class "select2-hidden-accessible").
+// 5. For Select2, identify the option value from the DOM (not just the display text).
+// 6. If action is "type" or "select", extract the value from the Command.
+// 7. IMPORTANT: If the Command specifies a particular element among many similar ones (e.g., "the second button", "the last checkbox", "the button next to the user icon"), determine the correct index or relative position.
+
+// Output Format:
+// Return ONLY a single-line JSON object. Do NOT include any other text, explanations, or markdown.
+// Structure:
+// {
+//   "selector": "<CSS selector string>",
+//   "action": "<action name>",
+//   "value": "<value string>", // Include for "type" or "select" actions
+//   "isSelect2": true/false,   // Include for "select" actions
+//   "optionValue": "<option value attribute>", // Include for "select" actions with Select2
+//   "index": 0,  // Include when there are multiple matching elements (0-based index)
+//   "positionHint": "next-to:selector" // Optional hint for relative positioning
+// }
+
+// Example for clicking a specific button: {"selector": "button.primary", "action": "click", "index": 1}
+// Example for clicking based on position: {"selector": "button.primary", "action": "click", "positionHint": "next-to:.user-icon"}
+// Example for selecting an option: {"selector": "[data-testid='booking-province-droplist']", "action": "select", "value": "Tỉnh An Giang", "isSelect2": true, "optionValue": "89"}
+
+// If the command is ambiguous or the element/action cannot be determined, return JSON: {"error": "Cannot determine action or selector."}
+
+// ---
+// Command: ${commandText}
+// ---
+// DOM:
+// \`\`\`html
+// ${currentDOM}
+// \`\`\`
+// ---
+// JavaScript Code:`;
+
+//       const chat = modelInstance.value.startChat();
+//       const result = await chat.sendMessage(prompt);
+//       const response = await result.response;
+//       let aiResponseText = (await response.text()).trim();
+
+//       console.log("Raw AI response:", aiResponseText);
+
+//       if (aiResponseText.startsWith("```json")) {
+//         aiResponseText = aiResponseText.substring(7);
+//         if (aiResponseText.endsWith("```")) {
+//           aiResponseText = aiResponseText.substring(
+//             0,
+//             aiResponseText.length - 3
+//           );
+//         }
+//         aiResponseText = aiResponseText.trim();
+//         console.log("Cleaned AI response:", aiResponseText);
+//       }
+
+//       try {
+//         const actionData = JSON.parse(aiResponseText);
+
+//         if (actionData.error) {
+//           messages.value.push({
+//             id: Date.now() + 1,
+//             text: `AI Error: ${actionData.error}`,
+//             sender: "bot",
+//             timestamp: Date.now(),
+//           });
+//         } else if (actionData.selector && actionData.action) {
+//           // Query all matching elements
+//           const allMatchingElements = document.querySelectorAll(
+//             actionData.selector
+//           );
+//           let targetElement = null;
+
+//           if (allMatchingElements.length === 0) {
+//             messages.value.push({
+//               id: Date.now() + 1,
+//               text: `Error: No elements found for selector: ${actionData.selector}`,
+//               sender: "bot",
+//               timestamp: Date.now(),
+//             });
+//             continue;
+//           }
+//           // Handle multiple matching elements with index
+//           else if (allMatchingElements.length > 1) {
+//             // If we have an index specified, use it
+//             if (
+//               typeof actionData.index === "number" &&
+//               actionData.index >= 0 &&
+//               actionData.index < allMatchingElements.length
+//             ) {
+//               targetElement = allMatchingElements[actionData.index];
+//             }
+//             // Handle position hints if provided
+//             else if (actionData.positionHint) {
+//               if (actionData.positionHint.startsWith("next-to:")) {
+//                 const nearbySelector = actionData.positionHint.substring(8);
+//                 const referenceElement = document.querySelector(nearbySelector);
+
+//                 if (referenceElement) {
+//                   // Find the element closest to the reference element
+//                   let closestElement = null;
+//                   let closestDistance = Infinity;
+
+//                   const refRect = referenceElement.getBoundingClientRect();
+//                   const refMidX = refRect.left + refRect.width / 2;
+//                   const refMidY = refRect.top + refRect.height / 2;
+
+//                   allMatchingElements.forEach((element) => {
+//                     const rect = element.getBoundingClientRect();
+//                     const midX = rect.left + rect.width / 2;
+//                     const midY = rect.top + rect.height / 2;
+
+//                     // Calculate Euclidean distance
+//                     const distance = Math.sqrt(
+//                       Math.pow(midX - refMidX, 2) + Math.pow(midY - refMidY, 2)
+//                     );
+
+//                     if (distance < closestDistance) {
+//                       closestDistance = distance;
+//                       closestElement = element;
+//                     }
+//                   });
+
+//                   targetElement = closestElement;
+//                 }
+//               }
+//             }
+//             // Default to the first element if no index or position hint
+//             else {
+//               targetElement = allMatchingElements[0];
+//             }
+//           }
+//           // Single element case
+//           else {
+//             targetElement = allMatchingElements[0];
+//           }
+
+//           if (!targetElement) {
+//             messages.value.push({
+//               id: Date.now() + 1,
+//               text: `Error: Could not determine which element to interact with`,
+//               sender: "bot",
+//               timestamp: Date.now(),
+//             });
+//           } else {
+//             let actionDescription = `${actionData.action} on ${actionData.selector}`;
+//             if (typeof actionData.index === "number") {
+//               actionDescription += ` (element #${actionData.index + 1})`;
+//             }
+
+//             switch (actionData.action.toLowerCase()) {
+//               case "click":
+//                 // For click actions, we still use regular click
+//                 targetElement.click();
+//                 break;
+
+//               case "select":
+//                 if (targetElement instanceof HTMLSelectElement) {
+//                   let optionValue = null;
+
+//                   // If we have a specific option value from AI
+//                   if (actionData.optionValue) {
+//                     optionValue = actionData.optionValue;
+//                   }
+//                   // Otherwise, try to find the option by text
+//                   else if (actionData.value) {
+//                     const options = Array.from(targetElement.options);
+//                     const matchingOption = options.find((option) =>
+//                       option.textContent.trim().includes(actionData.value)
+//                     );
+//                     if (matchingOption) {
+//                       optionValue = matchingOption.value;
+//                     }
+//                   }
+
+//                   if (optionValue !== null) {
+//                     // Set the value directly (using force approach)
+//                     targetElement.value = optionValue;
+//                     actionDescription += ` with value "${optionValue}" (${
+//                       actionData.value || ""
+//                     })`;
+
+//                     // Trigger events to notify frameworks like Select2
+//                     // Use force approach by manually dispatching events
+//                     targetElement.dispatchEvent(
+//                       new Event("change", { bubbles: true })
+//                     );
+
+//                     // For Select2 specifically, we might need additional triggers
+//                     if (
+//                       actionData.isSelect2 ||
+//                       targetElement.classList.contains(
+//                         "select2-hidden-accessible"
+//                       )
+//                     ) {
+//                       // Try to update the Select2 display
+//                       if (
+//                         window.jQuery &&
+//                         window.jQuery(targetElement).data("select2")
+//                       ) {
+//                         window.jQuery(targetElement).trigger("change");
+//                       }
+
+//                       actionDescription += " (Select2 force approach)";
+//                     }
+//                   } else {
+//                     throw new Error(
+//                       `Option "${actionData.value}" not found in select element.`
+//                     );
+//                   }
+//                 } else {
+//                   throw new Error(`'select' action requires a SELECT element.`);
+//                 }
+//                 break;
+
+//               case "type":
+//                 if (typeof actionData.value === "string") {
+//                   if (
+//                     targetElement instanceof HTMLInputElement ||
+//                     targetElement instanceof HTMLTextAreaElement
+//                   ) {
+//                     targetElement.value = actionData.value;
+//                     actionDescription += ` with value "${actionData.value}"`;
+//                     targetElement.dispatchEvent(
+//                       new Event("input", { bubbles: true })
+//                     );
+//                     targetElement.dispatchEvent(
+//                       new Event("change", { bubbles: true })
+//                     );
+//                   } else {
+//                     throw new Error(
+//                       `Element for 'type' is not an input or textarea.`
+//                     );
+//                   }
+//                 } else {
+//                   throw new Error(`'type' action requires a 'value' string.`);
+//                 }
+//                 break;
+
+//               case "focus":
+//                 targetElement.focus();
+//                 break;
+
+//               case "submit":
+//                 if (targetElement instanceof HTMLFormElement) {
+//                   targetElement.submit();
+//                 } else if (targetElement.form) {
+//                   targetElement.form.submit();
+//                 } else {
+//                   throw new Error(
+//                     `Cannot 'submit' element directly, and it's not part of a form.`
+//                   );
+//                 }
+//                 break;
+
+//               default:
+//                 throw new Error(`Unsupported action: ${actionData.action}`);
+//             }
+
+//             messages.value.push({
+//               id: Date.now() + 1,
+//               text: `Executed: ${actionDescription}`,
+//               sender: "bot",
+//               timestamp: Date.now(),
+//             });
+//           }
+//         } else {
+//           throw new Error("Invalid JSON structure received from AI.");
+//         }
+//       } catch (parseOrExecError) {
+//         console.error("JSON parsing or DOM execution error:", parseOrExecError);
+//         messages.value.push({
+//           id: Date.now() + 1,
+//           text: `Execution Error: ${parseOrExecError.message}. AI Response: ${aiResponseText}`,
+//           sender: "bot",
+//           timestamp: Date.now(),
+//         });
+//       }
+//     } catch (apiError) {
+//       console.error("Gemini API error:", apiError);
+//       messages.value.push({
+//         id: Date.now() + 1,
+//         text: "Error communicating with AI. Please check API key and console.",
+//         sender: "bot",
+//         timestamp: Date.now(),
+//       });
+//     }
+//   }
+//   isLoading.value = false;
+// };
+
+
+// version 1.0 =====================
 // const sendMessage = async () => {
 //   const userText = newMessage.value.trim();
 //   if (
@@ -690,185 +1615,16 @@ const sendMessage = async () => {
 //   isLoading.value = false;
 // };
 
-// const sendMessage = async () => {
-//   const userText = newMessage.value.trim();
-//   if (userText === '' || isLoading.value || !isApiKeySet.value || !modelInstance.value) {
-//     if (!isApiKeySet.value) {
-//       alert("Please set your Gemini API Key first.");
-//     }
-//     return;
-//   }
-
-//   const commands = userText.split('\n').map(cmd => cmd.trim()).filter(cmd => cmd !== '');
-//   if (commands.length === 0) {
-//     return;
-//   }
-
-//   messages.value.push({
-//     id: Date.now(),
-//     text: `Commands: ${userText}`,
-//     sender: 'user',
-//     timestamp: Date.now(),
-//   });
-
-//   newMessage.value = '';
-//   isLoading.value = true;
-
-//   for (const commandText of commands) {
-//     try {
-//       const currentDOM = document.body.outerHTML;
-//       const prompt = `
-// Your task is to act as a DOM interaction planner. Analyze the user command and the provided DOM structure. Identify the target element and the intended action.
-
-// Instructions:
-// 1. Find the target element based on the Command and DOM.
-// 2. Determine the best CSS selector using this priority: id > class > tag+attributes.
-// 3. Identify the action: "click", "type", "focus", "submit", "select".
-// 4. If action is "type" or "select", extract the value from the Command.
-
-// Output Format:
-// Return ONLY a single-line JSON object. Do NOT include any other text, explanations, or markdown.
-// Structure:
-// {
-//   "selector": "<CSS selector string>",
-//   "action": "<action name>",
-//   "value": "<value string>" // Include ONLY for "type" or "select" actions
-// }
-// Example for "click button with id save": {"selector": "#save", "action": "click"}
-// Example for "type 'hello' into input with name query": {"selector": "input[name='query']", "action": "type", "value": "hello"}
-// Example for "select 'US' in dropdown with class country": {"selector": ".country", "action": "select", "value": "US"}
-
-// If the command is ambiguous or the element/action cannot be determined, return JSON: {"error": "Cannot determine action or selector."}
-
-// ---
-// Command: ${commandText}
-// ---
-// DOM:
-// \`\`\`html
-// ${currentDOM}
-// \`\`\`
-// ---
-// JavaScript Code:`;
-
-//       const chat = modelInstance.value.startChat();
-//       const result = await chat.sendMessage(prompt);
-//       const response = await result.response;
-//       let aiResponseText = (await response.text()).trim();
-
-//       console.log("Raw AI response:", aiResponseText);
-
-//       if (aiResponseText.startsWith("```json")) {
-//         aiResponseText = aiResponseText.substring(7);
-//         if (aiResponseText.endsWith("```")) {
-//           aiResponseText = aiResponseText.substring(0, aiResponseText.length - 3);
-//         }
-//         aiResponseText = aiResponseText.trim();
-//         console.log("Cleaned AI response:", aiResponseText);
-//       }
-
-//       try {
-//         const actionData = JSON.parse(aiResponseText);
-
-//         if (actionData.error) {
-//           messages.value.push({
-//             id: Date.now() + 1,
-//             text: `AI Error: ${actionData.error}`,
-//             sender: 'bot',
-//             timestamp: Date.now(),
-//           });
-//         } else if (actionData.selector && actionData.action) {
-//           const targetElement = document.querySelector(actionData.selector);
-
-//           if (!targetElement) {
-//             messages.value.push({
-//               id: Date.now() + 1,
-//               text: `Error: Element not found for selector: ${actionData.selector}`,
-//               sender: 'bot',
-//               timestamp: Date.now(),
-//             });
-//           } else {
-//             let actionDescription = `${actionData.action} on ${actionData.selector}`;
-//             switch (actionData.action.toLowerCase()) {
-//               case 'click':
-//                 targetElement.click();
-//                 break;
-//               case 'type':
-//                 if (typeof actionData.value === 'string') {
-//                   if (targetElement instanceof HTMLInputElement || targetElement instanceof HTMLTextAreaElement) {
-//                     targetElement.value = actionData.value;
-//                     actionDescription += ` with value "${actionData.value}"`;
-//                     targetElement.dispatchEvent(new Event('input', { bubbles: true }));
-//                     targetElement.dispatchEvent(new Event('change', { bubbles: true }));
-//                   } else {
-//                     throw new Error(`Element for 'type' is not an input or textarea.`);
-//                   }
-//                 } else {
-//                   throw new Error(`'type' action requires a 'value' string.`);
-//                 }
-//                 break;
-//               case 'select':
-//                 if (typeof actionData.value === 'string' && targetElement instanceof HTMLSelectElement) {
-//                   targetElement.value = actionData.value;
-//                   actionDescription += ` to value "${actionData.value}"`;
-//                   targetElement.dispatchEvent(new Event('change', { bubbles: true }));
-//                 } else {
-//                   throw new Error(`'select' action requires a 'value' string and a SELECT element.`);
-//                 }
-//                 break;
-//               case 'focus':
-//                 targetElement.focus();
-//                 break;
-//               case 'submit':
-//                 if (targetElement instanceof HTMLFormElement) {
-//                   targetElement.submit();
-//                 } else if (targetElement.form) {
-//                   targetElement.form.submit();
-//                 } else {
-//                   throw new Error(`Cannot 'submit' element directly, and it's not part of a form.`);
-//                 }
-//                 break;
-//               default:
-//                 throw new Error(`Unsupported action: ${actionData.action}`);
-//             }
-//             messages.value.push({
-//               id: Date.now() + 1,
-//               text: `Executed: ${actionDescription}`,
-//               sender: 'bot',
-//               timestamp: Date.now(),
-//             });
-//           }
-//         } else {
-//           throw new Error("Invalid JSON structure received from AI.");
-//         }
-//       } catch (parseOrExecError) {
-//         console.error("JSON parsing or DOM execution error:", parseOrExecError);
-//         messages.value.push({
-//           id: Date.now() + 1,
-//           text: `Execution Error: ${parseOrExecError.message}. AI Response: ${aiResponseText}`,
-//           sender: 'bot',
-//           timestamp: Date.now(),
-//         });
-//       }
-//     } catch (apiError) {
-//       console.error("Gemini API error:", apiError);
-//       messages.value.push({
-//         id: Date.now() + 1,
-//         text: "Error communicating with AI. Please check API key and console.",
-//         sender: 'bot',
-//         timestamp: Date.now(),
-//       });
-//     }
-//   }
-//   isLoading.value = false;
-// };
-
 // Watch for chatbox visibility change to scroll down
+
+
 watch(isChatboxVisible, async (isVisible) => {
   if (isVisible) {
     await nextTick();
     scrollToBottom();
   }
 });
+
 
 // Watch for new messages to scroll down (only if visible)
 watch(

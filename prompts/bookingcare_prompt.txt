@@ -1,5 +1,7 @@
 Select the appointment type: choose "Book for myself" 
+
 Enter  fullname in the name input field  ("donald trump").
+
 Select gender by choosing  "Male"
 
 Enter contact phone number in the phone number field.  ("000000002").
