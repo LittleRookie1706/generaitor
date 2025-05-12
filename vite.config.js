@@ -1,10 +1,13 @@
-import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
+import { defineConfig } from "vite";
+import vue from "@vitejs/plugin-vue";
 // import { resolve } from 'path' // No longer needed for input path
-import { fileURLToPath, URL } from 'node:url' // Import URL for path resolution
+import { fileURLToPath, URL } from "node:url"; // Import URL for path resolution
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    'process.env': {}
+  },
   plugins: [vue()],
   build: {
     rollupOptions: {
@@ -24,10 +27,19 @@ export default defineConfig({
           // Keep default naming for other assets
           return `assets/[name][extname]`;
         },
+        // manualChunks(id) {
+        //   if (id.includes('node_modules')) {
+        //     return 'vendor';
+        //   }
+        //   // Create a separate chunk for domUtils
+        //   if (id.includes('src/utils/domUtils.js')) {
+        //     return 'dom-utils';
+        //   }
+        // }
       },
     },
     // Ensure the output directory is 'dist' and it's cleared before build
-    outDir: 'dist',
+    outDir: "dist",
     emptyOutDir: true,
   },
-})
+});

@@ -11,6 +11,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
     "@vueuse/core": "^13.1.0",
+    "html2pug": "^4.0.0",
     "pug": "^3.0.3",
     "vue": "^3.5.13"
   },

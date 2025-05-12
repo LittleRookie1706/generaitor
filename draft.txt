@@ -1,0 +1,115 @@
+// if (el.id && styleContent.includes(`#${el.id}`)) {
+        //   shouldKeep = true;
+        //   break;
+        // }
+        // if (el.classList && el.classList.length > 0) {
+        //   for (const className of el.classList) {
+        //     if (styleContent.includes(`.${className}`)) {
+        //       shouldKeep = true;
+        //       break;
+        //     }
+        //   }
+        //   if (shouldKeep) break;
+        // }
+
+
+
+const getMinimizedDOM = (rootElement) => {
+  if (!rootElement || typeof rootElement.cloneNode !== "function") {
+    console.error("Invalid rootElement", rootElement);
+    return "";
+  }
+  const clone = rootElement.cloneNode(true);
+
+  // 1. remove script
+  clone.querySelectorAll("script").forEach((script) => script.remove());
+
+  // 2. find all elements with hidden / disabled attributes
+  const disabledOrHiddenElements = new Set();
+  const allElements = Array.from(clone.querySelectorAll("*"));
+
+  for (const el of allElements) {
+    const isHidden =
+      el.hasAttribute("hidden") ||
+      el.getAttribute("aria-hidden") === "true" ||
+      el.style.display === "none" ||
+      el.style.visibility === "hidden";
+
+    const isDisabled =
+      el.hasAttribute("disabled") ||
+      el.getAttribute("aria-disabled") === "true";
+
+    if (isHidden || isDisabled) {
+      disabledOrHiddenElements.add(el);
+
+      el.querySelectorAll("*").forEach((child) => {
+        disabledOrHiddenElements.add(child);
+      });
+    }
+  }
+
+  // 3. remove style tags
+  const styleTags = Array.from(clone.querySelectorAll("style"));
+
+  for (const styleTag of styleTags) {
+    let shouldKeep = false;
+
+    if (disabledOrHiddenElements.has(styleTag)) {
+      shouldKeep = true;
+    } else {
+      // check content of style tag
+      const styleContent = styleTag.textContent;
+
+      for (const el of disabledOrHiddenElements) {
+        if (
+          styleContent.includes("[disabled]") ||
+          styleContent.includes("[hidden]") ||
+          styleContent.includes('[aria-hidden="true"]')
+        ) {
+          shouldKeep = true;
+          break;
+        }
+      }
+    }
+
+    // remove style tag
+    if (!shouldKeep) {
+      styleTag.remove();
+    }
+  }
+
+  // 4. remove style, event handlers
+  for (const el of allElements) {
+    if (!el.parentNode) {
+      continue;
+    }
+    if (!disabledOrHiddenElements.has(el)) {
+      el.removeAttribute("style");
+    }
+    Array.from(el.attributes).forEach((attr) => {
+      if (attr.name.startsWith("on")) {
+        el.removeAttribute(attr.name);
+      }
+    });
+  }
+
+  const finalHTML = clone.outerHTML;
+  const finalDOM = html2pug(finalHTML, { tabs: true });
+
+  const bytes = new TextEncoder().encode(finalDOM).length;
+  const kb = bytes / 1024;
+  const mb = kb / 1024;
+
+  console.log(`DOM size: ${kb.toFixed(2)} KB (${mb.toFixed(2)} MB)`);
+
+  return finalDOM;
+};
+
+
+
+
+manualChunks(id) {
+          if (id.includes('node_modules')) {
+            return 'vendor';
+          }
+        }

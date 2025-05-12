@@ -1,6 +1,6 @@
 Select the appointment type: choose "Book for myself" 
 
-Enter  fullname in the name input field  ("donald trump").
+Enter fullname in the name input field  ("donald trump").
 
 Select gender by choosing  "Male"
 
@@ -19,3 +19,15 @@ Enter full address in the address field. (Nguyễn Văn Linh, Phường Thanh Tr
 Enter the reason for the appointment in the "Reason for visit" field. (abcd)
 
 Click button "Xác nhận đặt khám"
+
+
+
+note: 
+
+html, css, js ()
+
+html bỏ hidden html -> bỏ css   -> chuyển pug
+
+css  
+
+js  bỏ
