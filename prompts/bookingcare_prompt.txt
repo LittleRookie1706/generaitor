@@ -10,9 +10,9 @@ Enter email address in the email field ("tommy@otani.com").
 
 Enter birth year in the date of birth field (2002).
 
-Select "Tỉnh Phú Yên" in province list
+select "Tỉnh Bắc Giang" in booking province droplist
 
-Select "Huyện Phú Hòa" in district list.
+Select "Huyện Hiệp Hòa" in booking district droplist.
 
 Enter full address in the address field. (Nguyễn Văn Linh, Phường Thanh Trung)
 
@@ -30,4 +30,12 @@ html bỏ hidden html -> bỏ css   -> chuyển pug
 
 css  
 
-js  bỏ
+
+
+1. js  bỏ
+
+2. bỏ html bị display none, opacity 0, hidden ...
+
+3. bỏ css 
+
+4. 
