@@ -12,13 +12,29 @@ Enter birth year in the date of birth field (2002).
 
 select "Tỉnh Bắc Giang" in booking province droplist
 
-Select "Huyện Hiệp Hòa" in booking district droplist.
-
 Enter full address in the address field. (Nguyễn Văn Linh, Phường Thanh Trung)
 
 Enter the reason for the appointment in the "Reason for visit" field. (abcd)
 
 Click button "Xác nhận đặt khám"
+
+Select "Huyện Hiệp Hòa" in booking district droplist.
+
+
+
+
+==========================
+
+
+type "Nhập email" input with value "emailll"
+
+type "Nhập email" input with value "emailll"
+
+Select "Chọn giới tính" dropdown and choose option "Nam"
+
+Select "Chọn Tỉnh/Thành phố" dropdown and choose option "Hải Phòng"
+
+Click patient birthdate input and pick a date from the date picker (26/12/2003)
 
 
 

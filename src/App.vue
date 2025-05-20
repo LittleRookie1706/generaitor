@@ -248,7 +248,7 @@ const sendMessage2 = async () => {
 
 // select dropdown OK =====================
 
-const sendMessageAct2 = async () => {
+const sendMessageAct = async () => {
   const userText = newMessage.value.trim();
   if (
     userText === "" ||
@@ -580,7 +580,7 @@ JavaScript Code:`;
   isLoading.value = false;
 };
 
-const sendMessage = async () => {
+const sendMessageAct3 = async () => {
   const userText = newMessage.value.trim();
   if (userText === "" || isLoading.value) {
     return;
@@ -663,16 +663,27 @@ const sendMessage = async () => {
 
           try {
             
-
+            chrome.runtime.sendMessage(
+              { type: 'executeJsCode', jsCode: actionData.jsCode },
+              (response) => {
+                if (chrome.runtime.lastError) {
+                  console.error('Error:', chrome.runtime.lastError);
+                } else if (response.success) {
+                  console.log('Code executed successfully');
+                } else {
+                  console.error('Execution failed:', response.error);
+                }
+              }
+            );
             // Execute js code
-            const script = document.createElement('script');
-            script.textContent = actionData.jsCode;
-            document.body.appendChild(script);
-            console.log("document.body:", document.body);
+            // const script = document.createElement('script');
+            // script.textContent = actionData.jsCode;
+            // document.body.appendChild(script);
+            // console.log("document.body:", document.body);
 
-            setTimeout(() => {
-              document.body.removeChild(script);
-            }, 100000000000); 
+            // setTimeout(() => {
+            //   document.body.removeChild(script);
+            // }, 100000000000); 
 
             messages.value.push({
               id: Date.now() + 1,
@@ -720,11 +731,15 @@ const sendMessage = async () => {
   isLoading.value = false;
 };
 
-const sendMessage33 = async () => {
+const sendMessage = async () => {
   const userText = newMessage.value.trim();
   if (userText === "" || isLoading.value) {
     return;
   }
+
+  // const code = 'document.getElementById("view-detail")?.click();';
+  // const fn = new Function(code);
+  // fn();
 
   const commands = userText
     .split("\n")
@@ -744,7 +759,7 @@ const sendMessage33 = async () => {
   newMessage.value = "";
   isLoading.value = true;
 
-  const API_URL = "http://localhost:3000/api/process-dom2";
+  const API_URL = "http://localhost:3000/api/process-dom";
 
   for (const commandText of commands) {
     try {
@@ -760,16 +775,22 @@ const sendMessage33 = async () => {
       //   console.log("Element:", el, "Visible:", isVisible(el));
       // });
 
+      const originalDOM = document.body.cloneNode(true);
+
+      //const currentDOM = getMinimizedDOM(document.body);
       const currentDOM = getMinimizedDOM(document.body);
 
-      console.log("Current DOM:", currentDOM);
+      // document.body.parentNode.replaceChild(originalDOM, document.body);
+
+
+      console.log("Current DOM:", currentDOM.outerHTML);
       const response = await fetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          dom: currentDOM,
+          dom: currentDOM.outerHTML,
           commandText: commandText,
           apiKey: apiKey.value,
         }),
@@ -779,6 +800,7 @@ const sendMessage33 = async () => {
         const errorData = await response.json();
         throw new Error(`API Error: ${errorData.error || response.statusText}`);
       }
+
 
       const data = await response.json();
       let aiResponseText = data.aiResponse;
@@ -1046,7 +1068,7 @@ button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 
 // The actual chatbox container, shown only when isChatboxVisible is true
 .chatbox-container(v-if="isChatboxVisible")
   .chatbox-header
-    h1 Simple Chatbotyy
+    h1 Simple Chatbottt
     button.close-btn(@click="isChatboxVisible = false") &times;
 
   // Conditionally render the main content (now always rendered if container is visible)
@@ -1054,7 +1076,7 @@ button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 
     // Add ref to the messages area
     .messages-area(ref="messagesAreaRef")
       // Add loading indicator
-      .loading-indicator(v-if="isLoading") Thinking...
+      .loading-indicator Thinking...
       // Update class binding to use 'user' and 'bot'
       .message(v-for="msg in messages" :key="msg.id" :class="['message-' + msg.sender]")
         .message-content {{ msg.text }}
@@ -1133,7 +1155,7 @@ button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 
 /* Styles for the floating open chat button */
 .open-chat-btn {
   position: fixed;
-  bottom: 20px;
+  bottom: 200px;
   right: 20px;
   width: 60px;
   height: 60px;
