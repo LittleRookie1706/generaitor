@@ -25,10 +25,11 @@ Select "Huyện Hiệp Hòa" in booking district droplist.
 
 ==========================
 
+type "Nhập họ và tên" input with value "fullname-input"
 
-type "Nhập email" input with value "emailll"
+type "Nhập email" input with value "email-input"
 
-type "Nhập email" input with value "emailll"
+type "Nhập số điện thoại" input with value "0000006666"
 
 Select "Chọn giới tính" dropdown and choose option "Nam"
 

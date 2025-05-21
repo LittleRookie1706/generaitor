@@ -240,498 +240,115 @@ const sendMessage2 = async () => {
   isLoading.value = false;
 };
 
+const sendMessage_gencode = async () => {
+  const userText = newMessage.value.trim();
+  if (userText === "" || isLoading.value) {
+    return;
+  }
+
+  // const code = 'document.getElementById("view-detail")?.click();';
+  // const fn = new Function(code);
+  // fn();
+
+  const commands = userText
+    .split("\n")
+    .map((cmd) => cmd.trim())
+    .filter((cmd) => cmd !== "");
+  if (commands.length === 0) {
+    return;
+  }
+
+  messages.value.push({
+    id: Date.now(),
+    text: `Commands: ${userText}`,
+    sender: "user",
+    timestamp: Date.now(),
+  });
+
+  newMessage.value = "";
+  isLoading.value = true;
+
+  const API_URL = "http://localhost:3000/api/generate-cypress";
+
+  try {
+    console.log("document.body:", document);
+    const currentDOM = getMinimizedDOM(document.body);
+
+    // document.body.parentNode.replaceChild(originalDOM, document.body);
+
+    console.log("Current DOM:", currentDOM.outerHTML);
+
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dom: currentDOM.outerHTML,
+        commandText: commands,
+        apiKey: apiKey.value,
+      }),
+    });
+
+    // const response = await fetch(API_URL, {
+    //   method: "POST",
+    //   headers: {
+    //     "Content-Type": "application/json",
+    //   },
+    //   body: JSON.stringify({
+    //     dom: currentDOM.outerHTML,
+    //     commandText: commandText,
+    //     apiKey: apiKey.value,
+    //   }),
+    // });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`API Error: ${errorData.error || response.statusText}`);
+    }
+
+    const data = await response.json();
+    let aiResponseText = data.aiResponse;
+
+    console.log("AI response from API:", data);
+
+    for (const item of data.individual) {
+      if (item.error) {
+        messages.value.push({
+          text: `Command: ${item.command}\nError: ${item.error}`,
+          sender: "bot",
+        });
+      } else {
+        messages.value.push({
+          text: `Command: ${item.command}\nCypress Code:\n${item.code}`,
+          sender: "bot",
+        });
+      }
+    }
+
+    messages.value.push({
+      text: `Complete Cypress Test:\n${data.fullScript}`,
+      sender: "bot",
+    });
+  } catch (apiError) {
+    console.error("API error:", apiError);
+    messages.value.push({
+      id: Date.now() + 1,
+      text: `Error: ${apiError.message}`,
+      sender: "bot",
+      timestamp: Date.now(),
+    });
+  }
+
+  isLoading.value = false;
+};
+
 // =================================
 
 // last version ================
 
 // DOM is minimized: hidden elements removed, scripts/styles removed, 'disabled' attribute preserved.
 
-// select dropdown OK =====================
 
-const sendMessageAct = async () => {
-  const userText = newMessage.value.trim();
-  if (
-    userText === "" ||
-    isLoading.value ||
-    !isApiKeySet.value ||
-    !modelInstance.value
-  ) {
-    if (!isApiKeySet.value) {
-      alert("Please set your Gemini API Key first.");
-    }
-    return;
-  }
-
-  const commands = userText
-    .split("\n")
-    .map((cmd) => cmd.trim())
-    .filter((cmd) => cmd !== "");
-  if (commands.length === 0) {
-    return;
-  }
-
-  messages.value.push({
-    id: Date.now(),
-    text: `Commands: ${userText}`,
-    sender: "user",
-    timestamp: Date.now(),
-  });
-
-  newMessage.value = "";
-  isLoading.value = true;
-
-  for (const commandText of commands) {
-    try {
-      const currentDOM = getMinimizedDOM(document.body);
-
-      console.log("Current DOM:", currentDOM);
-      const prompt = `
-Your task is to act as a DOM interaction planner. Analyze the user command and the provided DOM structure. Identify the target element and the intended action.
-
-Instructions:
-1. Find the target element based on the Command and DOM.
-2. Determine the best CSS selector using this priority: id > data-testid > class > tag+attributes.
-3. Identify the action: "click", "type", "focus", "submit", "select".
-4. For "select" action, determine if it's a regular select or Select2 dropdown (has class "select2-hidden-accessible").
-5. For Select2, identify the option value from the DOM (not just the display text).
-6. If action is "type" or "select", extract the value from the Command.
-7. IMPORTANT: If the Command specifies a particular element among many similar ones (e.g., "the second button", "the last checkbox", "the button next to the user icon"), determine the correct index or relative position.
-
-Output Format:
-Return ONLY a single-line JSON object. Do NOT include any other text, explanations, or markdown.
-Structure:
-{
-  "selector": "<CSS selector string>",
-  "action": "<action name>",
-  "value": "<value string>", // Include for "type" or "select" actions
-  "isSelect2": true/false,   // Include for "select" actions
-  "optionValue": "<option value attribute>", // Include for "select" actions with Select2
-  "index": 0,  // Include when there are multiple matching elements (0-based index)
-  "positionHint": "next-to:selector" // Optional hint for relative positioning
-}
-
-Example for clicking a specific button: {"selector": "button.primary", "action": "click", "index": 1}
-Example for clicking based on position: {"selector": "button.primary", "action": "click", "positionHint": "next-to:.user-icon"}
-Example for selecting an option: {"selector": "[data-testid='booking-province-droplist']", "action": "select", "value": "Tỉnh An Giang", "isSelect2": true, "optionValue": "89"}
-
-If the command is ambiguous or the element/action cannot be determined, return JSON: {"error": "Cannot determine action or selector."}
-
----
-Command: ${commandText}
----
-DOM:
-\`\`\`html
-${currentDOM}
-\`\`\`
----
-JavaScript Code:`;
-
-      const chat = modelInstance.value.startChat();
-      const result = await chat.sendMessage(prompt);
-      const response = await result.response;
-      let aiResponseText = (await response.text()).trim();
-
-      console.log("Raw AI response:", aiResponseText);
-
-      if (aiResponseText.startsWith("```json")) {
-        aiResponseText = aiResponseText.substring(7);
-        if (aiResponseText.endsWith("```")) {
-          aiResponseText = aiResponseText.substring(
-            0,
-            aiResponseText.length - 3
-          );
-        }
-        aiResponseText = aiResponseText.trim();
-        console.log("Cleaned AI response:", aiResponseText);
-      }
-
-      try {
-        const actionData = JSON.parse(aiResponseText);
-
-        if (actionData.error) {
-          messages.value.push({
-            id: Date.now() + 1,
-            text: `AI Error: ${actionData.error}`,
-            sender: "bot",
-            timestamp: Date.now(),
-          });
-        } else if (actionData.selector && actionData.action) {
-          // Query all matching elements
-          const allMatchingElements = document.querySelectorAll(
-            actionData.selector
-          );
-          let targetElement = null;
-
-          if (allMatchingElements.length === 0) {
-            messages.value.push({
-              id: Date.now() + 1,
-              text: `Error: No elements found for selector: ${actionData.selector}`,
-              sender: "bot",
-              timestamp: Date.now(),
-            });
-            continue;
-          }
-          // Handle multiple matching elements with index
-          else if (allMatchingElements.length > 1) {
-            // If we have an index specified, use it
-            if (
-              typeof actionData.index === "number" &&
-              actionData.index >= 0 &&
-              actionData.index < allMatchingElements.length
-            ) {
-              targetElement = allMatchingElements[actionData.index];
-            }
-            // Handle position hints if provided
-            else if (actionData.positionHint) {
-              if (actionData.positionHint.startsWith("next-to:")) {
-                const nearbySelector = actionData.positionHint.substring(8);
-                const referenceElement = document.querySelector(nearbySelector);
-
-                if (referenceElement) {
-                  // Find the element closest to the reference element
-                  let closestElement = null;
-                  let closestDistance = Infinity;
-
-                  const refRect = referenceElement.getBoundingClientRect();
-                  const refMidX = refRect.left + refRect.width / 2;
-                  const refMidY = refRect.top + refRect.height / 2;
-
-                  allMatchingElements.forEach((element) => {
-                    const rect = element.getBoundingClientRect();
-                    const midX = rect.left + rect.width / 2;
-                    const midY = rect.top + rect.height / 2;
-
-                    // Calculate Euclidean distance
-                    const distance = Math.sqrt(
-                      Math.pow(midX - refMidX, 2) + Math.pow(midY - refMidY, 2)
-                    );
-
-                    if (distance < closestDistance) {
-                      closestDistance = distance;
-                      closestElement = element;
-                    }
-                  });
-
-                  targetElement = closestElement;
-                }
-              }
-            }
-            // Default to the first element if no index or position hint
-            else {
-              targetElement = allMatchingElements[0];
-            }
-          }
-          // Single element case
-          else {
-            targetElement = allMatchingElements[0];
-          }
-
-          if (!targetElement) {
-            messages.value.push({
-              id: Date.now() + 1,
-              text: `Error: Could not determine which element to interact with`,
-              sender: "bot",
-              timestamp: Date.now(),
-            });
-          } else {
-            let actionDescription = `${actionData.action} on ${actionData.selector}`;
-            if (typeof actionData.index === "number") {
-              actionDescription += ` (element #${actionData.index + 1})`;
-            }
-
-            switch (actionData.action.toLowerCase()) {
-              case "click":
-                // For click actions, we still use regular click
-                targetElement.click();
-                break;
-
-              case "select":
-                if (targetElement instanceof HTMLSelectElement) {
-                  let optionValue = null;
-
-                  // If we have a specific option value from AI
-                  if (actionData.optionValue) {
-                    optionValue = actionData.optionValue;
-                  }
-                  // Otherwise, try to find the option by text
-                  else if (actionData.value) {
-                    const options = Array.from(targetElement.options);
-                    const matchingOption = options.find((option) =>
-                      option.textContent.trim().includes(actionData.value)
-                    );
-                    if (matchingOption) {
-                      optionValue = matchingOption.value;
-                    }
-                  }
-
-                  if (optionValue !== null) {
-                    // Set the value directly (using force approach)
-                    targetElement.value = optionValue;
-                    actionDescription += ` with value "${optionValue}" (${
-                      actionData.value || ""
-                    })`;
-
-                    // Trigger events to notify frameworks like Select2
-                    // Use force approach by manually dispatching events
-                    targetElement.dispatchEvent(
-                      new Event("change", { bubbles: true })
-                    );
-
-                    // For Select2 specifically, we might need additional triggers
-                    if (
-                      actionData.isSelect2 ||
-                      targetElement.classList.contains(
-                        "select2-hidden-accessible"
-                      )
-                    ) {
-                      // Try to update the Select2 display
-                      if (
-                        window.jQuery &&
-                        window.jQuery(targetElement).data("select2")
-                      ) {
-                        window.jQuery(targetElement).trigger("change");
-                      }
-
-                      actionDescription += " (Select2 force approach)";
-                    }
-                  } else {
-                    throw new Error(
-                      `Option "${actionData.value}" not found in select element.`
-                    );
-                  }
-                } else {
-                  throw new Error(`'select' action requires a SELECT element.`);
-                }
-                break;
-
-              case "type":
-                if (typeof actionData.value === "string") {
-                  if (
-                    targetElement instanceof HTMLInputElement ||
-                    targetElement instanceof HTMLTextAreaElement
-                  ) {
-                    targetElement.value = actionData.value;
-                    actionDescription += ` with value "${actionData.value}"`;
-                    targetElement.dispatchEvent(
-                      new Event("input", { bubbles: true })
-                    );
-                    targetElement.dispatchEvent(
-                      new Event("change", { bubbles: true })
-                    );
-                  } else {
-                    throw new Error(
-                      `Element for 'type' is not an input or textarea.`
-                    );
-                  }
-                } else {
-                  throw new Error(`'type' action requires a 'value' string.`);
-                }
-                break;
-
-              case "focus":
-                targetElement.focus();
-                break;
-
-              case "submit":
-                if (targetElement instanceof HTMLFormElement) {
-                  targetElement.submit();
-                } else if (targetElement.form) {
-                  targetElement.form.submit();
-                } else {
-                  throw new Error(
-                    `Cannot 'submit' element directly, and it's not part of a form.`
-                  );
-                }
-                break;
-
-              default:
-                throw new Error(`Unsupported action: ${actionData.action}`);
-            }
-
-            messages.value.push({
-              id: Date.now() + 1,
-              text: `Executed: ${actionDescription}`,
-              sender: "bot",
-              timestamp: Date.now(),
-            });
-          }
-        } else {
-          throw new Error("Invalid JSON structure received from AI.");
-        }
-      } catch (parseOrExecError) {
-        console.error("JSON parsing or DOM execution error:", parseOrExecError);
-        messages.value.push({
-          id: Date.now() + 1,
-          text: `Execution Error: ${parseOrExecError.message}. AI Response: ${aiResponseText}`,
-          sender: "bot",
-          timestamp: Date.now(),
-        });
-      }
-    } catch (apiError) {
-      console.error("Gemini API error:", apiError);
-      messages.value.push({
-        id: Date.now() + 1,
-        text: "Error communicating with AI. Please check API key and console.",
-        sender: "bot",
-        timestamp: Date.now(),
-      });
-    }
-  }
-  isLoading.value = false;
-};
-
-const sendMessageAct3 = async () => {
-  const userText = newMessage.value.trim();
-  if (userText === "" || isLoading.value) {
-    return;
-  }
-
-  const commands = userText
-    .split("\n")
-    .map((cmd) => cmd.trim())
-    .filter((cmd) => cmd !== "");
-  if (commands.length === 0) {
-    return;
-  }
-
-  messages.value.push({
-    id: Date.now(),
-    text: `Commands: ${userText}`,
-    sender: "user",
-    timestamp: Date.now(),
-  });
-
-  newMessage.value = "";
-  isLoading.value = true;
-
-  const API_URL = "http://localhost:3000/api/process-dom2";
-
-  for (const commandText of commands) {
-    try {
-      console.log("document.body:", document);
-      // let element = document.querySelector('#showErrorBtn');
-
-      // console.log("Element:", isVisible(element));
-
-      // const rootElement = document.body;
-      // const allElements = rootElement.querySelectorAll("*");
-
-      // allElements.forEach((el) => {
-      //   console.log("Element:", el, "Visible:", isVisible(el));
-      // });
-
-      const currentDOM = getMinimizedDOM(document.body);
-
-      console.log("Current DOMmm:", currentDOM);
-      const response = await fetch(API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dom: currentDOM,
-          commandText: commandText,
-          apiKey: apiKey.value,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`API Error: ${errorData.error || response.statusText}`);
-      }
-
-      const data = await response.json();
-      let aiResponseText = data.aiResponse;
-
-      console.log("AI response from API:", aiResponseText);
-
-      try {
-        const actionData = JSON.parse(aiResponseText);
-
-        if (actionData.error) {
-          messages.value.push({
-            id: Date.now() + 1,
-            text: `AI Error: ${actionData.error}`,
-            sender: "bot",
-            timestamp: Date.now(),
-          });
-        } else if (actionData.selector && actionData.jsCode) {
-          
-
-          // const executeJsCode = new Function(actionData.jsCode);
-          // executeJsCode();
-
-          try {
-            
-            chrome.runtime.sendMessage(
-              { type: 'executeJsCode', jsCode: actionData.jsCode },
-              (response) => {
-                if (chrome.runtime.lastError) {
-                  console.error('Error:', chrome.runtime.lastError);
-                } else if (response.success) {
-                  console.log('Code executed successfully');
-                } else {
-                  console.error('Execution failed:', response.error);
-                }
-              }
-            );
-            // Execute js code
-            // const script = document.createElement('script');
-            // script.textContent = actionData.jsCode;
-            // document.body.appendChild(script);
-            // console.log("document.body:", document.body);
-
-            // setTimeout(() => {
-            //   document.body.removeChild(script);
-            // }, 100000000000); 
-
-            messages.value.push({
-              id: Date.now() + 1,
-              text: `Successfully executed: ${actionDescription}`,
-              sender: "bot",
-              timestamp: Date.now(),
-            });
-          } catch (jsError) {
-            console.error("Error executing JavaScript code:", jsError);
-            messages.value.push({
-              id: Date.now() + 1,
-              text: `Error executing JavaScript: ${jsError.message}`,
-              sender: "bot",
-              timestamp: Date.now(),
-            });
-          }
-        } else {
-          // Fallback for backward compatibility with old API response format
-          messages.value.push({
-            id: Date.now() + 1,
-            text: "Error: Invalid response format from API. Missing selector or JavaScript code.",
-            sender: "bot",
-            timestamp: Date.now(),
-          });
-        }
-      } catch (parseError) {
-        console.error("Error parsing AI response:", parseError);
-        messages.value.push({
-          id: Date.now() + 1,
-          text: `Error parsing AI response: ${parseError.message}`,
-          sender: "bot",
-          timestamp: Date.now(),
-        });
-      }
-    } catch (apiError) {
-      console.error("API error:", apiError);
-      messages.value.push({
-        id: Date.now() + 1,
-        text: `Error: ${apiError.message}`,
-        sender: "bot",
-        timestamp: Date.now(),
-      });
-    }
-  }
-  isLoading.value = false;
-};
-
-const sendMessage = async () => {
+const sendMessage_interact = async () => {
   const userText = newMessage.value.trim();
   if (userText === "" || isLoading.value) {
     return;
@@ -764,24 +381,9 @@ const sendMessage = async () => {
   for (const commandText of commands) {
     try {
       console.log("document.body:", document);
-      // let element = document.querySelector('#showErrorBtn');
-
-      // console.log("Element:", isVisible(element));
-
-      // const rootElement = document.body;
-      // const allElements = rootElement.querySelectorAll("*");
-
-      // allElements.forEach((el) => {
-      //   console.log("Element:", el, "Visible:", isVisible(el));
-      // });
-
-      const originalDOM = document.body.cloneNode(true);
-
-      //const currentDOM = getMinimizedDOM(document.body);
       const currentDOM = getMinimizedDOM(document.body);
 
       // document.body.parentNode.replaceChild(originalDOM, document.body);
-
 
       console.log("Current DOM:", currentDOM.outerHTML);
       const response = await fetch(API_URL, {
@@ -800,7 +402,6 @@ const sendMessage = async () => {
         const errorData = await response.json();
         throw new Error(`API Error: ${errorData.error || response.statusText}`);
       }
-
 
       const data = await response.json();
       let aiResponseText = data.aiResponse;
@@ -1042,6 +643,380 @@ const sendMessage = async () => {
   isLoading.value = false;
 };
 
+
+const sendMessage = async () => {
+
+  console.log("sendMessage called");
+
+  const userText = newMessage.value.trim();
+  if (userText === "" || isLoading.value) {
+    return;
+  }
+
+  // const code = 'document.getElementById("view-detail")?.click();';
+  // const fn = new Function(code);
+  // fn();
+
+  const commands = userText
+    .split("\n")
+    .map((cmd) => cmd.trim())
+    .filter((cmd) => cmd !== "");
+  if (commands.length === 0) {
+    return;
+  }
+
+  messages.value.push({
+    id: Date.now(),
+    text: `Commands: ${userText}`,
+    sender: "user",
+    timestamp: Date.now(),
+  });
+
+  newMessage.value = "";
+  isLoading.value = true;
+
+  const API_URL_INTERACT = "http://localhost:3000/api/process-dom";
+
+  for (const commandText of commands) {
+    try {
+      console.log("document.body:", document);
+      const currentDOM = getMinimizedDOM(document.body);
+
+      // document.body.parentNode.replaceChild(originalDOM, document.body);
+
+      console.log("Current DOM:", currentDOM.outerHTML);
+      const response = await fetch(API_URL_INTERACT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          dom: currentDOM.outerHTML,
+          commandText: commandText,
+          apiKey: apiKey.value,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`API Error: ${errorData.error || response.statusText}`);
+      }
+
+      const data = await response.json();
+      let aiResponseText = data.aiResponse;
+
+      console.log("AI response from API:", aiResponseText);
+
+      try {
+        const actionData = JSON.parse(aiResponseText);
+
+        if (actionData.error) {
+          messages.value.push({
+            id: Date.now() + 1,
+            text: `AI Error: ${actionData.error}`,
+            sender: "bot",
+            timestamp: Date.now(),
+          });
+        } else if (actionData.selector && actionData.action) {
+          // Query all matching elements
+          const allMatchingElements = document.querySelectorAll(
+            actionData.selector
+          );
+          let targetElement = null;
+
+          if (allMatchingElements.length === 0) {
+            messages.value.push({
+              id: Date.now() + 1,
+              text: `Error: No elements found for selector: ${actionData.selector}`,
+              sender: "bot",
+              timestamp: Date.now(),
+            });
+            continue;
+          }
+          // Handle multiple matching elements with index
+          else if (allMatchingElements.length > 1) {
+            // If we have an index specified, use it
+            if (
+              typeof actionData.index === "number" &&
+              actionData.index >= 0 &&
+              actionData.index < allMatchingElements.length
+            ) {
+              targetElement = allMatchingElements[actionData.index];
+            }
+            // Handle position hints if provided
+            else if (actionData.positionHint) {
+              if (actionData.positionHint.startsWith("next-to:")) {
+                const nearbySelector = actionData.positionHint.substring(8);
+                const referenceElement = document.querySelector(nearbySelector);
+
+                if (referenceElement) {
+                  // Find the element closest to the reference element
+                  let closestElement = null;
+                  let closestDistance = Infinity;
+
+                  const refRect = referenceElement.getBoundingClientRect();
+                  const refMidX = refRect.left + refRect.width / 2;
+                  const refMidY = refRect.top + refRect.height / 2;
+
+                  allMatchingElements.forEach((element) => {
+                    const rect = element.getBoundingClientRect();
+                    const midX = rect.left + rect.width / 2;
+                    const midY = rect.top + rect.height / 2;
+
+                    // Calculate Euclidean distance
+                    const distance = Math.sqrt(
+                      Math.pow(midX - refMidX, 2) + Math.pow(midY - refMidY, 2)
+                    );
+
+                    if (distance < closestDistance) {
+                      closestDistance = distance;
+                      closestElement = element;
+                    }
+                  });
+
+                  targetElement = closestElement;
+                }
+              }
+            }
+            // Default to the first element if no index or position hint
+            else {
+              targetElement = allMatchingElements[0];
+            }
+          }
+          // Single element case
+          else {
+            targetElement = allMatchingElements[0];
+          }
+
+          if (!targetElement) {
+            messages.value.push({
+              id: Date.now() + 1,
+              text: `Error: Could not determine which element to interact with`,
+              sender: "bot",
+              timestamp: Date.now(),
+            });
+          } else {
+            let actionDescription = `${actionData.action} on ${actionData.selector}`;
+            if (typeof actionData.index === "number") {
+              actionDescription += ` (element #${actionData.index + 1})`;
+            }
+
+            switch (actionData.action.toLowerCase()) {
+              case "click":
+                // For click actions, we still use regular click
+                targetElement.click();
+                break;
+
+              case "select":
+                if (targetElement instanceof HTMLSelectElement) {
+                  let optionValue = null;
+
+                  // If we have a specific option value from AI
+                  if (actionData.optionValue) {
+                    optionValue = actionData.optionValue;
+                  }
+                  // Otherwise, try to find the option by text
+                  else if (actionData.value) {
+                    const options = Array.from(targetElement.options);
+                    const matchingOption = options.find((option) =>
+                      option.textContent.trim().includes(actionData.value)
+                    );
+                    if (matchingOption) {
+                      optionValue = matchingOption.value;
+                    }
+                  }
+
+                  if (optionValue !== null) {
+                    // Set the value directly (using force approach)
+                    targetElement.value = optionValue;
+                    actionDescription += ` with value "${optionValue}" (${
+                      actionData.value || ""
+                    })`;
+
+                    // Trigger events to notify frameworks like Select2
+                    // Use force approach by manually dispatching events
+                    targetElement.dispatchEvent(
+                      new Event("change", { bubbles: true })
+                    );
+
+                    // For Select2 specifically, we might need additional triggers
+                    if (
+                      actionData.isSelect2 ||
+                      targetElement.classList.contains(
+                        "select2-hidden-accessible"
+                      )
+                    ) {
+                      // Try to update the Select2 display
+                      if (
+                        window.jQuery &&
+                        window.jQuery(targetElement).data("select2")
+                      ) {
+                        window.jQuery(targetElement).trigger("change");
+                      }
+
+                      actionDescription += " (Select2 force approach)";
+                    }
+                  } else {
+                    throw new Error(
+                      `Option "${actionData.value}" not found in select element.`
+                    );
+                  }
+                } else {
+                  throw new Error(`'select' action requires a SELECT element.`);
+                }
+                break;
+
+              case "type":
+                if (typeof actionData.value === "string") {
+                  if (
+                    targetElement instanceof HTMLInputElement ||
+                    targetElement instanceof HTMLTextAreaElement
+                  ) {
+                    targetElement.value = actionData.value;
+                    actionDescription += ` with value "${actionData.value}"`;
+                    targetElement.dispatchEvent(
+                      new Event("input", { bubbles: true })
+                    );
+                    targetElement.dispatchEvent(
+                      new Event("change", { bubbles: true })
+                    );
+                  } else {
+                    throw new Error(
+                      `Element for 'type' is not an input or textarea.`
+                    );
+                  }
+                } else {
+                  throw new Error(`'type' action requires a 'value' string.`);
+                }
+                break;
+
+              case "focus":
+                targetElement.focus();
+                break;
+
+              case "submit":
+                if (targetElement instanceof HTMLFormElement) {
+                  targetElement.submit();
+                } else if (targetElement.form) {
+                  targetElement.form.submit();
+                } else {
+                  throw new Error(
+                    `Cannot 'submit' element directly, and it's not part of a form.`
+                  );
+                }
+                break;
+
+              default:
+                throw new Error(`Unsupported action: ${actionData.action}`);
+            }
+
+            messages.value.push({
+              id: Date.now() + 1,
+              text: `Executed: ${actionDescription}`,
+              sender: "bot",
+              timestamp: Date.now(),
+            });
+          }
+        } else {
+          throw new Error("Invalid JSON structure received from AI.");
+        }
+      } catch (parseOrExecError) {
+        console.error("JSON parsing or DOM execution error:", parseOrExecError);
+        messages.value.push({
+          id: Date.now() + 1,
+          text: `Execution Error: ${parseOrExecError.message}. AI Response: ${aiResponseText}`,
+          sender: "bot",
+          timestamp: Date.now(),
+        });
+      }
+    } catch (apiError) {
+      console.error("API error:", apiError);
+      messages.value.push({
+        id: Date.now() + 1,
+        text: `Error: ${apiError.message}`,
+        sender: "bot",
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  // ===========================
+
+  const API_URL = "http://localhost:3000/api/generate-cypress";
+
+  try {
+    console.log("document.body:", document);
+    const currentDOM = getMinimizedDOM(document.body);
+
+    // document.body.parentNode.replaceChild(originalDOM, document.body);
+
+    console.log("Current DOM:", currentDOM.outerHTML);
+
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dom: currentDOM.outerHTML,
+        commandText: commands,
+        apiKey: apiKey.value,
+      }),
+    });
+
+    // const response = await fetch(API_URL, {
+    //   method: "POST",
+    //   headers: {
+    //     "Content-Type": "application/json",
+    //   },
+    //   body: JSON.stringify({
+    //     dom: currentDOM.outerHTML,
+    //     commandText: commandText,
+    //     apiKey: apiKey.value,
+    //   }),
+    // });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`API Error: ${errorData.error || response.statusText}`);
+    }
+
+    const data = await response.json();
+    let aiResponseText = data.aiResponse;
+
+    console.log("AI response from API:", data);
+
+    for (const item of data.individual) {
+      if (item.error) {
+        messages.value.push({
+          text: `Command: ${item.command}\nError: ${item.error}`,
+          sender: "bot",
+        });
+      } 
+      // else {
+      //   messages.value.push({
+      //     text: `Command: ${item.command}\nCypress Code:\n${item.code}`,
+      //     sender: "bot",
+      //   });
+      // }
+    }
+
+    messages.value.push({
+      text: `Complete Cypress Test:\n${data.fullScript}`,
+      sender: "bot",
+    });
+  } catch (apiError) {
+    console.error("API error:", apiError);
+    messages.value.push({
+      id: Date.now() + 1,
+      text: `Error: ${apiError.message}`,
+      sender: "bot",
+      timestamp: Date.now(),
+    });
+  }
+
+  isLoading.value = false;
+};
+
+
 watch(isChatboxVisible, async (isVisible) => {
   if (isVisible) {
     await nextTick();
@@ -1059,6 +1034,8 @@ watch(
   },
   { deep: true }
 );
+
+
 </script>
 
 <template lang="pug">
@@ -1068,7 +1045,7 @@ button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 
 // The actual chatbox container, shown only when isChatboxVisible is true
 .chatbox-container(v-if="isChatboxVisible")
   .chatbox-header
-    h1 Simple Chatbottt
+    h1 Simple Chatboty
     button.close-btn(@click="isChatboxVisible = false") &times;
 
   // Conditionally render the main content (now always rendered if container is visible)
