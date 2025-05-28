@@ -602,6 +602,118 @@ export function getMinimizedDOM(rootElement) {
 }
 
 
+export function performElementAction(targetElement, actionData) {
+  const action = actionData.action.toLowerCase();
+  let actionDescription = action;
+
+  switch (action) {
+    case "click":
+      targetElement.click();
+      break;
+
+    case "doubleclick":
+      const dblClickEvent = new MouseEvent("dblclick", { bubbles: true });
+      targetElement.dispatchEvent(dblClickEvent);
+      break;
+
+    case "check":
+      if (
+        targetElement instanceof HTMLInputElement &&
+        targetElement.type === "checkbox"
+      ) {
+        if (!targetElement.checked) {
+          targetElement.checked = true;
+          targetElement.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      } else {
+        throw new Error(`'check' action requires a checkbox input element.`);
+      }
+      break;
+
+    case "uncheck":
+      if (
+        targetElement instanceof HTMLInputElement &&
+        targetElement.type === "checkbox"
+      ) {
+        if (targetElement.checked) {
+          targetElement.checked = false;
+          targetElement.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      } else {
+        throw new Error(`'uncheck' action requires a checkbox input element.`);
+      }
+      break;
+
+    case "select":
+      if (targetElement instanceof HTMLSelectElement) {
+        let optionValue = null;
+
+        if (actionData.optionValue) {
+          optionValue = actionData.optionValue;
+        } else if (actionData.value) {
+          const options = Array.from(targetElement.options);
+          const matchingOption = options.find((option) =>
+            option.textContent.trim().includes(actionData.value)
+          );
+          if (matchingOption) {
+            optionValue = matchingOption.value;
+          }
+        }
+
+        if (optionValue !== null) {
+          targetElement.value = optionValue;
+          actionDescription += ` with value "${optionValue}" (${
+            actionData.value || ""
+          })`;
+
+          targetElement.dispatchEvent(new Event("change", { bubbles: true }));
+
+          if (
+            actionData.isSelect2 ||
+            targetElement.classList.contains("select2-hidden-accessible")
+          ) {
+            if (window.jQuery && window.jQuery(targetElement).data("select2")) {
+              window.jQuery(targetElement).trigger("change");
+            }
+            actionDescription += " (Select2 force approach)";
+          }
+        } else {
+          throw new Error(
+            `Option "${actionData.value}" not found in select element.`
+          );
+        }
+      } else {
+        throw new Error(`'select' action requires a SELECT element.`);
+      }
+      break;
+
+    case "type":
+      if (typeof actionData.value === "string") {
+        if (
+          targetElement instanceof HTMLInputElement ||
+          targetElement instanceof HTMLTextAreaElement
+        ) {
+          targetElement.value = actionData.value;
+          actionDescription += ` with value "${actionData.value}"`;
+
+          targetElement.dispatchEvent(new Event("input", { bubbles: true }));
+          targetElement.dispatchEvent(new Event("change", { bubbles: true }));
+        } else {
+          throw new Error(`Element for 'type' is not an input or textarea.`);
+        }
+      } else {
+        throw new Error(`'type' action requires a 'value' string.`);
+      }
+      break;
+
+    default:
+      throw new Error(`Unsupported action type: ${action}`);
+  }
+
+}
+
+
+
 
 
 
