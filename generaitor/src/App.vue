@@ -348,7 +348,6 @@ const sendMessage_gencode = async () => {
 
 // DOM is minimized: hidden elements removed, scripts/styles removed, 'disabled' attribute preserved.
 
-
 const sendMessage_interact = async () => {
   const userText = newMessage.value.trim();
   if (userText === "" || isLoading.value) {
@@ -647,9 +646,7 @@ const sendMessage_interact = async () => {
   isLoading.value = false;
 };
 
-
 const sendMessage = async () => {
-
   console.log("sendMessage called now");
 
   const userText = newMessage.value.trim();
@@ -689,7 +686,7 @@ const sendMessage = async () => {
         sender: "bot",
         timestamp: Date.now(),
       });
-      continue; 
+      continue;
     }
 
     try {
@@ -718,7 +715,6 @@ const sendMessage = async () => {
 
       const data = await response.json();
 
-      
       let aiResponseText = data.aiResponse;
 
       console.log("AI response json:", aiResponseText);
@@ -759,41 +755,7 @@ const sendMessage = async () => {
             ) {
               targetElement = allMatchingElements[actionData.index];
             }
-            // Handle position hints if provided
-            else if (actionData.positionHint) {
-              if (actionData.positionHint.startsWith("next-to:")) {
-                const nearbySelector = actionData.positionHint.substring(8);
-                const referenceElement = document.querySelector(nearbySelector);
 
-                if (referenceElement) {
-                  // Find the element closest to the reference element
-                  let closestElement = null;
-                  let closestDistance = Infinity;
-
-                  const refRect = referenceElement.getBoundingClientRect();
-                  const refMidX = refRect.left + refRect.width / 2;
-                  const refMidY = refRect.top + refRect.height / 2;
-
-                  allMatchingElements.forEach((element) => {
-                    const rect = element.getBoundingClientRect();
-                    const midX = rect.left + rect.width / 2;
-                    const midY = rect.top + rect.height / 2;
-
-                    // Calculate Euclidean distance
-                    const distance = Math.sqrt(
-                      Math.pow(midX - refMidX, 2) + Math.pow(midY - refMidY, 2)
-                    );
-
-                    if (distance < closestDistance) {
-                      closestDistance = distance;
-                      closestElement = element;
-                    }
-                  });
-
-                  targetElement = closestElement;
-                }
-              }
-            }
             // Default to the first element if no index or position hint
             else {
               targetElement = allMatchingElements[0];
@@ -926,9 +888,11 @@ const sendMessage = async () => {
                 throw new Error(`Unsupported action: ${actionData.action}`);
             }
 
+            console.log("commandText:", commandText);
+
             messages.value.push({
               id: Date.now() + 1,
-              text: `Executed: ${actionDescription}`,
+              text: `Executed: ${commandText}`,
               sender: "bot",
               timestamp: Date.now(),
               color: "green",
@@ -981,8 +945,6 @@ const sendMessage = async () => {
       }),
     });
 
-   
-
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(`API Error: ${errorData.error || response.statusText}`);
@@ -1028,374 +990,6 @@ const sendMessage = async () => {
   isLoading.value = false;
 };
 
-const sendMessage_combine = async () => {
-  console.log("sendMessage called");
-
-  const userText = newMessage.value.trim();
-  if (userText === "" || isLoading.value) {
-    return;
-  }
-
-  const commands = userText
-    .split("\n")
-    .map((cmd) => cmd.trim())
-    .filter((cmd) => cmd !== "");
-  if (commands.length === 0) {
-    return;
-  }
-
-  messages.value.push({
-    id: Date.now(),
-    text: `Commands: ${userText}`,
-    sender: "user",
-    timestamp: Date.now(),
-  });
-
-  newMessage.value = "";
-  isLoading.value = true;
-
-  const API_URL = "http://localhost:3000/api/process-dom-and-cypress";
-
-  try {
-    console.log("document.body:", document);
-    const currentDOM = getMinimizedDOM(document.body);
-
-    console.log("Current DOM:", currentDOM.outerHTML);
-    
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        dom: currentDOM.outerHTML,
-        commands: commands, 
-        apiKey: apiKey.value,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API Error: ${errorData.error || response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log("API response:", data);
-
-    // Process each target element from the response
-    if (data.success && data.targetElements) {
-      for (const targetElementData of data.targetElements) {
-        const actionData = targetElementData;
-        console.log("Action data:", actionData);
-
-        try {
-          // Handle error cases for individual commands
-          if (targetElementData.error) {
-            messages.value.push({
-              id: Date.now() + Math.random(),
-              text: `AI Error for "${targetElementData.command}": ${targetElementData.error}`,
-              sender: "bot",
-              timestamp: Date.now(),
-              color: "red",
-            });
-            continue;
-          }
-
-          // Process successful command responses
-          if (targetElementData.selector && targetElementData.action) {
-            // Query all matching elements
-            const allMatchingElements = document.querySelectorAll(
-              targetElementData.selector
-            );
-            let targetElement = null;
-
-            if (allMatchingElements.length === 0) {
-              messages.value.push({
-                id: Date.now() + Math.random(),
-                text: `Error for "${targetElementData.command}": No elements found for selector: ${targetElementData.selector}`,
-                sender: "bot",
-                timestamp: Date.now(),
-                color: "red",
-              });
-              continue;
-            }
-            // Handle multiple matching elements with index
-            else if (allMatchingElements.length > 1) {
-              // If we have an index specified, use it
-              if (
-                typeof targetElementData.index === "number" &&
-                targetElementData.index >= 0 &&
-                targetElementData.index < allMatchingElements.length
-              ) {
-                targetElement = allMatchingElements[targetElementData.index];
-              }
-              // Handle position hints if provided
-              else if (targetElementData.positionHint) {
-                if (targetElementData.positionHint.startsWith("next-to:")) {
-                  const nearbySelector = targetElementData.positionHint.substring(8);
-                  const referenceElement = document.querySelector(nearbySelector);
-
-                  if (referenceElement) {
-                    // Find the element closest to the reference element
-                    let closestElement = null;
-                    let closestDistance = Infinity;
-
-                    const refRect = referenceElement.getBoundingClientRect();
-                    const refMidX = refRect.left + refRect.width / 2;
-                    const refMidY = refRect.top + refRect.height / 2;
-
-                    allMatchingElements.forEach((element) => {
-                      const rect = element.getBoundingClientRect();
-                      const midX = rect.left + rect.width / 2;
-                      const midY = rect.top + rect.height / 2;
-
-                      // Calculate Euclidean distance
-                      const distance = Math.sqrt(
-                        Math.pow(midX - refMidX, 2) + Math.pow(midY - refMidY, 2)
-                      );
-
-                      if (distance < closestDistance) {
-                        closestDistance = distance;
-                        closestElement = element;
-                      }
-                    });
-
-                    targetElement = closestElement;
-                  }
-                }
-              }
-              // Default to the first element if no index or position hint
-              else {
-                targetElement = allMatchingElements[0];
-              }
-            }
-            // Single element case
-            else {
-              targetElement = allMatchingElements[0];
-            }
-
-            if (!targetElement) {
-              messages.value.push({
-                id: Date.now() + Math.random(),
-                text: `Error for "${targetElementData.command}": Could not determine which element to interact with`,
-                sender: "bot",
-                timestamp: Date.now(),
-                color: "red",
-              });
-              continue;
-            }
-
-            let actionDescription = `${targetElementData.action} on ${targetElementData.selector}`;
-            if (typeof targetElementData.index === "number") {
-              actionDescription += ` (element #${targetElementData.index + 1})`;
-            }
-
-            performElementAction(targetElement, actionData)
-            
-            // switch (actionData.action.toLowerCase()) {
-            //   case "click":
-            //     // For click actions, we still use regular click
-            //     targetElement.click();
-            //     break;
-              
-            //     case "doubleclick":
-            //       const dblClickEvent = new MouseEvent("dblclick", { bubbles: true });
-            //       targetElement.dispatchEvent(dblClickEvent);
-            //       break;
-
-            //     case "check":
-            //       if (targetElement instanceof HTMLInputElement && targetElement.type === "checkbox") {
-            //         if (!targetElement.checked) {
-            //           targetElement.checked = true;
-            //           targetElement.dispatchEvent(new Event("change", { bubbles: true }));
-            //         }
-            //       } else {
-            //         throw new Error(`'check' action requires a checkbox input element.`);
-            //       }
-            //       break;
-
-            //     case "uncheck":
-            //       if (targetElement instanceof HTMLInputElement && targetElement.type === "checkbox") {
-            //         if (targetElement.checked) {
-            //           targetElement.checked = false;
-            //           targetElement.dispatchEvent(new Event("change", { bubbles: true }));
-            //         }
-            //       } else {
-            //         throw new Error(`'uncheck' action requires a checkbox input element.`);
-            //       }
-            //       break;
-
-            //   case "select":
-            //     if (targetElement instanceof HTMLSelectElement) {
-            //       let optionValue = null;
-
-            //       // If we have a specific option value from AI
-            //       if (actionData.optionValue) {
-            //         optionValue = actionData.optionValue;
-            //       }
-            //       // Otherwise, try to find the option by text
-            //       else if (actionData.value) {
-            //         const options = Array.from(targetElement.options);
-            //         const matchingOption = options.find((option) =>
-            //           option.textContent.trim().includes(actionData.value)
-            //         );
-            //         if (matchingOption) {
-            //           optionValue = matchingOption.value;
-            //         }
-            //       }
-
-            //       if (optionValue !== null) {
-            //         // Set the value directly (using force approach)
-            //         targetElement.value = optionValue;
-            //         actionDescription += ` with value "${optionValue}" (${
-            //           actionData.value || ""
-            //         })`;
-
-            //         // Trigger events to notify frameworks like Select2
-            //         // Use force approach by manually dispatching events
-            //         targetElement.dispatchEvent(
-            //           new Event("change", { bubbles: true })
-            //         );
-
-            //         // For Select2 specifically, we might need additional triggers
-            //         if (
-            //           actionData.isSelect2 ||
-            //           targetElement.classList.contains(
-            //             "select2-hidden-accessible"
-            //           )
-            //         ) {
-            //           // Try to update the Select2 display
-            //           if (
-            //             window.jQuery &&
-            //             window.jQuery(targetElement).data("select2")
-            //           ) {
-            //             window.jQuery(targetElement).trigger("change");
-            //           }
-
-            //           actionDescription += " (Select2 force approach)";
-            //         }
-            //       } else {
-            //         throw new Error(
-            //           `Option "${actionData.value}" not found in select element.`
-            //         );
-            //       }
-            //     } else {
-            //       throw new Error(`'select' action requires a SELECT element.`);
-            //     }
-            //     break;
-
-            //   case "type":
-            //     if (typeof actionData.value === "string") {
-            //       if (
-            //         targetElement instanceof HTMLInputElement ||
-            //         targetElement instanceof HTMLTextAreaElement
-            //       ) {
-            //         targetElement.value = actionData.value;
-            //         actionDescription += ` with value "${actionData.value}"`;
-            //         targetElement.dispatchEvent(
-            //           new Event("input", { bubbles: true })
-            //         );
-            //         targetElement.dispatchEvent(
-            //           new Event("change", { bubbles: true })
-            //         );
-            //       } else {
-            //         throw new Error(
-            //           `Element for 'type' is not an input or textarea.`
-            //         );
-            //       }
-            //     } else {
-            //       throw new Error(`'type' action requires a 'value' string.`);
-            //     }
-            //     break;
-
-            //   case "focus":
-            //     targetElement.focus();
-            //     break;
-
-            //   case "submit":
-            //     if (targetElement instanceof HTMLFormElement) {
-            //       targetElement.submit();
-            //     } else if (targetElement.form) {
-            //       targetElement.form.submit();
-            //     } else {
-            //       throw new Error(
-            //         `Cannot 'submit' element directly, and it's not part of a form.`
-            //       );
-            //     }
-            //     break;
-
-            //   default:
-            //     throw new Error(`Unsupported action: ${actionData.action}`);
-            // }
-              
-
-            messages.value.push({
-              id: Date.now() + Math.random(),
-              text: `Executed "${targetElementData.command}": ${actionDescription}`,
-              sender: "bot",
-              timestamp: Date.now(),
-              color: "green",
-            });
-          } else {
-            messages.value.push({
-              id: Date.now() + Math.random(),
-              text: `Invalid response structure for "${targetElementData.command}"`,
-              sender: "bot",
-              timestamp: Date.now(),
-              color: "red",
-            });
-          }
-        } catch (execError) {
-          console.error("Execution error for command:", targetElementData.command, execError);
-          messages.value.push({
-            id: Date.now() + Math.random(),
-            text: `Execution Error for "${targetElementData.command}": ${execError.message}`,
-            sender: "bot",
-            timestamp: Date.now(),
-            color: "red",
-          });
-        }
-      }
-
-      // Display generated Cypress code if available
-      if (data.combinedCypressCode && data.combinedCypressCode.trim()) {
-        messages.value.push({
-          id: Date.now() + Math.random(),
-          text: `Generated Cypress Code:\n\`\`\`javascript\n${data.combinedCypressCode}\n\`\`\``,
-          sender: "bot",
-          timestamp: Date.now(),
-          color: "blue",
-        });
-      }
-
-      // Display summary
-      messages.value.push({
-        id: Date.now() + Math.random(),
-        text: `Cypress Complete: ${data.processedSuccessfully}/${data.totalCommands} commands executed successfully`,
-        sender: "bot",
-        timestamp: Date.now(),
-        color: data.processedSuccessfully === data.totalCommands ? "green" : "orange",
-      });
-
-    } else {
-      throw new Error("Invalid API response structure");
-    }
-
-  } catch (apiError) {
-    console.error("API error:", apiError);
-    messages.value.push({
-      id: Date.now() + Math.random(),
-      text: `Error: ${apiError.message}`,
-      sender: "bot",
-      timestamp: Date.now(),
-      color: "red",
-    });
-  } finally {
-    isLoading.value = false;
-  }
-};
-
-
 watch(isChatboxVisible, async (isVisible) => {
   if (isVisible) {
     await nextTick();
@@ -1413,8 +1007,6 @@ watch(
   },
   { deep: true }
 );
-
-
 </script>
 
 <template lang="pug">
@@ -1424,7 +1016,7 @@ button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 
 // The actual chatbox container, shown only when isChatboxVisible is true
 .chatbox-container(v-if="isChatboxVisible")
   .chatbox-header
-    h1 Simple Chatboty
+    h1 Simple Chatbot
     button.close-btn(@click="isChatboxVisible = false") &times;
 
   // Conditionally render the main content (now always rendered if container is visible)
@@ -1435,6 +1027,7 @@ button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 
       .loading-indicator Thinking...
       // Update class binding to use 'user' and 'bot'
       .message(v-for="msg in messages" :key="msg.id" :class="['message-' + msg.sender]")
+        .status-dot(v-if="msg.sender === 'bot'" :style="{ backgroundColor: msg.color || '#000' }")
         .message-content(:style="{ color: msg.color }") {{ msg.text }}
         .timestamp {{ formattedTimestamp(msg.timestamp) }}
     //- .input-area
@@ -1605,7 +1198,17 @@ h1 {
   background-color: #e5e5ea; /* Different background for bot */
   color: #000;
   align-self: flex-start;
+  display: flex; /* Use flexbox for alignment */
+  align-items: center; /* Vertically align items */
   /* border: 1px solid #eee; */ /* Optional: remove or adjust border */
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px; /* Space between dot and message content */
+  flex-shrink: 0; /* Prevent dot from shrinking */
 }
 
 .message-content {
