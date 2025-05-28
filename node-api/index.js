@@ -1,0 +1,956 @@
+const express = require("express");
+const html2pug = require("html2pug");
+
+const finalHTML = `
+  <div>
+    <h1>Hello World</h1>
+    <p>This is a paragraph</p>
+  </div>
+`;
+
+const finalDOM = html2pug(finalHTML, { tabs: true });
+
+console.log(finalDOM);
+
+const app = express();
+const port = 3000;
+
+const cors = require("cors");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+
+app.use(cors());
+app.use(express.json({ limit: "5mb" })); 
+
+app.get("/api", (req, res) => {
+  res.send("Hello Worlddd api");
+});
+
+const getMinimizedDOM = (rootElement) => {
+  if (!rootElement || typeof rootElement.cloneNode !== "function") {
+    console.error("Invalid rootElement", rootElement);
+    return "";
+  }
+  const clone = rootElement.cloneNode(true);
+  console.log("Cloned DOM:", clone);
+
+  // 1. remove script
+  clone.querySelectorAll("script").forEach((script) => script.remove());
+
+  // 2. find all elements with hidden / disabled attributes
+
+  const disabledOrHiddenElements = new Set();
+  const allElements = Array.from(clone.querySelectorAll("*"));
+
+  for (const el of allElements) {
+    const isHidden =
+      el.style.display === "none" ||
+      el.style.visibility === "hidden" ||
+      el.style.hidden === "true";
+
+    const isDisabled = el.style.disabled === "true";
+
+    if (isHidden || isDisabled) {
+      disabledOrHiddenElements.add(el);
+    }
+  }
+  // const disabledOrHiddenElements = new Set();
+  // const allElements = Array.from(clone.querySelectorAll("*"));
+
+  // for (const el of allElements) {
+  //   const isHidden =
+  //     el.hasAttribute("hidden") ||
+  //     el.getAttribute("aria-hidden") === "true" ||
+  //     el.style.display === "none" ||
+  //     el.style.visibility === "hidden";
+
+  //   const isDisabled =
+  //     el.hasAttribute("disabled") ||
+  //     el.getAttribute("aria-disabled") === "true";
+
+  //   if (isHidden || isDisabled) {
+  //     disabledOrHiddenElements.add(el);
+
+  //     el.querySelectorAll("*").forEach((child) => {
+  //       disabledOrHiddenElements.add(child);
+  //     });
+  //   }
+  // }
+
+  // 3. remove style tags
+  const styleTags = Array.from(clone.querySelectorAll("style"));
+
+  for (const styleTag of styleTags) {
+    let shouldKeep = false;
+
+    if (disabledOrHiddenElements.has(styleTag)) {
+      shouldKeep = true;
+    } else {
+      // check content of style tag
+      const styleContent = styleTag.textContent;
+
+      for (const el of disabledOrHiddenElements) {
+        if (
+          styleContent.includes("[disabled]") ||
+          styleContent.includes("[hidden]") ||
+          styleContent.includes('[aria-hidden="true"]')
+        ) {
+          shouldKeep = true;
+          break;
+        }
+      }
+    }
+
+    // remove style tag
+    if (!shouldKeep) {
+      styleTag.remove();
+    }
+  }
+
+  // 4. remove style, event handlers
+  for (const el of allElements) {
+    if (!disabledOrHiddenElements.has(el)) {
+      el.removeAttribute("style");
+    }
+    Array.from(el.attributes).forEach((attr) => {
+      if (attr.name.startsWith("on")) {
+        el.removeAttribute(attr.name);
+      }
+    });
+  }
+
+  const finalHTML = clone.outerHTML;
+  const finalDOM = html2pug(finalHTML, { tabs: true });
+
+  const bytes = new TextEncoder().encode(finalDOM).length;
+  const kb = bytes / 1024;
+  const mb = kb / 1024;
+
+  console.log(`DOM size: ${kb.toFixed(2)} KB (${mb.toFixed(2)} MB)`);
+
+  return finalDOM;
+};
+
+
+const setupAI = (apiKey) => {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  return genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
+  //return genAI.getGenerativeModel({ model: "gemini-2.5-pro-preview-05-06" });
+};
+
+// const setupAI = (apiKey) => {
+//   const genAI = new GoogleGenerativeAI(apiKey);
+//   return genAI.getGenerativeModel({
+//     model: "gemini-2.5-flash-preview-05-20",
+//     apiVersion: "v1beta",
+//   });
+// };
+
+
+app.get("/", (req, res) => {
+  res.send("Hello World");
+});
+
+app.post("/api/process-dom", async (req, res) => {
+  const { dom, commandText, apiKey } = req.body;
+
+  if (!dom || !commandText) {
+    return res
+      .status(400)
+      .json({ error: "DOM content and command are required" });
+  }
+
+  try {
+    //const minimizedDOM = getMinimizedDOM(dom);
+    const minimizedDOM = html2pug(dom, { tabs: true });
+    //console.log("Minimized DOM:", minimizedDOM);
+
+    const model = setupAI(apiKey);
+    if (!model) {
+      return res.status(500).json({ error: "Failed to initialize Gemini AI" });
+    }
+
+    const prompt = `
+Your task is to act as a DOM interaction planner. Analyze the user command and the provided DOM structure. Identify the target element and the intended action.
+
+Instructions:
+1. Find the target element based on the Command and DOM.
+2. Determine the best CSS selector using this priority: id > data-testid > class > tag+attributes.
+3. Identify the action: "click", "type", "focus", "submit", "select", ...
+4. For "select" action, determine if it's a regular select or Select2 dropdown (has class "select2-hidden-accessible").
+5. For Select2, identify the option value from the DOM (not just the display text).
+6. For "type" or "select" action, extract the value from the Command.
+7. IMPORTANT: If the Command specifies a particular element among many similar ones (e.g., "the second button", "the last checkbox", "the button next to the user icon"), determine the correct index or relative position.
+8. CRITICAL: NEVER select disabled elements. Check for all possible indicators of disabled state:
+   - Elements with attribute 'disabled'
+   - Elements with attribute 'aria-disabled="true"'
+
+   - Parent elements that might contain the above attributes/classes
+9. If multiple elements match your selector, but some are disabled, only consider the enabled ones for indexing.
+10. Generate a JavaScript code snippet (string) that performs the action safely with target element.
+Output Format:
+Return ONLY a single-line JSON object. Do NOT include any other text, explanations, or markdown.
+Structure:
+{
+  "selector": "<CSS selector string>",
+  "action": "<action name>",
+  "value": "<value string>", // Include for "type" or "select" actions
+  "isSelect2": true/false,   // Include for "select" actions
+  "optionValue": "<option value attribute>", // Include for "select" actions with Select2
+  "index": 0,  // Include when there are multiple matching elements (0-based index)
+  "positionHint": "next-to:selector" // Optional hint for relative positioning
+  "isEnabled": true,
+  "jsCode": "<A short, clean JavaScript snippet to execute the action>"
+}
+
+Example for clicking a specific button: {"selector": "button.primary", "action": "click", "index": 1}
+Example for clicking based on position: {"selector": "button.primary", "action": "click", "positionHint": "next-to:.user-icon"}
+Example for selecting an option: {"selector": "[data-testid='booking-province-droplist']", "action": "select", "value": "Tỉnh An Giang", "isSelect2": true, "optionValue": "89"}
+
+If the command is ambiguous or the element/action cannot be determined, return JSON: {"error": "Cannot determine action or selector."}
+
+---
+Command: ${commandText}
+---
+DOM:
+\`\`\`html
+${minimizedDOM}
+\`\`\`
+---
+JavaScript Code:`;
+
+    // call ai
+    const chat = model.startChat();
+    const result = await chat.sendMessage(prompt);
+    //const response = dom;
+
+    const response = result.response;
+
+    console.log("AI response:", response);
+    let aiResponseText = response.text().trim();
+
+    if (aiResponseText.startsWith("```json")) {
+      aiResponseText = aiResponseText.substring(7);
+      if (aiResponseText.endsWith("```")) {
+        aiResponseText = aiResponseText.substring(0, aiResponseText.length - 3);
+      }
+      aiResponseText = aiResponseText.trim();
+    }
+
+    try {
+      const aiResponse = JSON.parse(aiResponseText);
+
+      // disabled validation
+      if (aiResponse.selector && !aiResponse.error) {
+        if (!aiResponse.selector.includes(":not([disabled])")) {
+          aiResponse.selector =
+            aiResponse.selector +
+            ':not([disabled]):not([aria-disabled="true"]):not(.disabled)';
+        }
+
+        aiResponseText = JSON.stringify(aiResponse);
+      }
+    } catch (e) {
+      console.error("Error parsing AI response:", e);
+    }
+    console.log("AI response:", aiResponseText);
+
+    // return response
+    res.json({
+      success: true,
+      aiResponse: aiResponseText,
+    });
+  } catch (error) {
+    console.error("Error processing DOM with AI:", error);
+    res.status(500).json({
+      error: "Failed to process DOM with AI",
+      details: error.message,
+    });
+  }
+});
+
+
+app.post("/api/generate-cypress", async (req, res) => {
+  console.log("get cypress");
+  const { dom, commandText, apiKey } = req.body;
+
+  if (!dom || !commandText) {
+    return res
+      .status(400)
+      .json({ error: "DOM content and command are required" });
+  }
+
+  const minimizedDOM = html2pug(dom, { tabs: true });
+
+  // const model = setupAI(apiKey);
+  // if (!model) {
+  //   return res.status(500).json({ error: "Failed to initialize Gemini AI" });
+  // }
+
+  // const chat = model.startChat();
+  const commands = Array.isArray(commandText) ? commandText : [commandText];
+  let combinedCode = "";
+  const individualResults = [];
+
+  for (const command of commands) {
+
+
+    const model = setupAI(apiKey);
+    if (!model) {
+      return res.status(500).json({ error: "Failed to initialize Gemini AI" });
+    }
+
+    const chat = model.startChat();
+    console.log("Command:", command);
+    const prompt = `
+Your task is to generate Cypress autotest code based on the user's command and the provided DOM structure.
+
+Instructions:
+1. Analyze the user command and the provided DOM structure.
+2. Identify ONLY the target element based on the command.
+3. Generate the appropriate Cypress command to interact with the element. You MUST only generate Cypress code strictly for the provided command.
+DO NOT generate Cypress code for other parts of the DOM or unrelated fields.
+IMPORTANT: DO NOT add or assume any class, id, attribute, or state (like '.loading', '.active', ':hover', etc.) that is NOT present in the provided DOM into Cypress code.
+4. Output ONLY the Cypress code. Do NOT include any other text, explanations, or markdown.
+5. For SELECT elements, should use:
+   cy.get('selector').select('value');
+   For common elements (not input elements), prefer these custom commands:
+   - cy.getButton("Button Text")
+   - cy.getCheckbox("Label")
+   - cy.getDialog("Title or Label")
+   - cy.getMenuItem("Text")
+6. Select Elements: ( not select2 )
+- For any command that selects a value from a dropdown (<select>), do NOT use the .select() command.
+- Instead, use the following format:
+    cy.get('select-selector').getMenuItem('Visible Option Text').then($option => {
+      cy.get('#select-selector').select($option.val());
+    });
+  where:
+    - 'select-selector' is the actual selector of the <select> tag (e.g., #select-province).
+    - 'Visible Option Text' is the text content of the <option> to be selected (e.g., 'Hà Nội').
+- You MUST always call .get() or cy.get() on the <select> element first, and then chain .getMenuItem(...).
+If the <select> has class select2-hidden-accessible or appears to be enhanced with Select2, then:
+- Click the visible UI element (e.g. .select2, .select2-selection, or adjacent span).
+- Click the desired option text from the dropdown list.
+Example:
+
+cy.get('#select-id').next().find('.select2-selection').click();
+cy.get('.select2-results__option').contains('Visible Option Text').click();
+Do not use .select() for Select2-enhanced dropdowns.
+
+
+7. Add a .should('have.value', VALUE) check after each select action.
+8. ALWAYS ensure Cypress selectors target only **enabled** elements.
+
+   - Do not attempt to interact with any element that is disabled or marked as aria-disabled.
+   - If there are multiple matching elements, filter by enabled ones before applying index.
+9. For **input elements**, follow this priority to determine the selector method:
+    a. If there is a <label for="..."> that matches the input by id, use:
+       → cy.getInput("Label Text").type("...") — custom command using 'label'
+    b. Else if input has a 'placeholder', use:
+       → cy.getInput("Placeholder Text").type("...")
+       (custom command matched by placeholder)
+    c. If the input element has neither a matching label with 'for' nor a placeholder attribute, then fall back to using a standard Cypress selector targeting the element by id or class exactly as it appears in the DOM: cy.get('#id'), cy.get('.class')
+10. When the user command specifies the n-th element (e.g., "the 2nd button", or "the 3rd checkbox"):
+    - Use the :eq(n) selector to target the n-th element (0-based index).
+11. For commands that check element visibility or disabled status, generate Cypress assertions accordingly:
+
+To check if an element is visible:
+Use .should('be.visible')
+
+To check if an element is not visible:
+Use .should('not.be.visible')
+
+To check if an element is not disabled:
+Use .should('not.be.disabled')
+
+To check if an element is disabled:
+Use .should('be.disabled')
+
+Use the appropriate selector as per rules above (custom commands or cy.get() selectors).
+
+12.To verify selected option:
+- For commands check selected item in a select, checkbox, radio or menu like "check if 'Option Text' is selected in dropdown", use the following format:
+    cy.get('select-selector')
+      .getOptionValueByText('Option Text')
+      .then((value) => {
+        cy.get('select-selector').should('have.value', value);
+      });
+    Example:
+Command: select "Hà Nội" in select province dropdown  
+DOM:
+<select id="select-province" class="select-class">
+  <option value="1" id="option-1" class="option-class">Hải Dương</option>
+  <option value="2" id="option-2" class="option-class">Hải Phòng</option>
+  <option value="3" id="option-3" class="option-class">Hà Nội</option>
+</select>
+Code:
+cy.get('#select-province').getMenuItem('Hà Nội').then($option => {
+  cy.get('#select-province').select($option.val());
+});
+
+
+Command: click "Submit" button  
+DOM: <button id="submitBtn">Submit</button>  
+Code:  
+cy.getButton("Submit").click();
+
+Command:  type "Họ và tên" input with value "ExampleName"
+DOM:
+<label for="patientName">Họ và tên</label>
+<input id="patientName" type="text" />
+Code:
+cy.getInput("Họ và tên").type("John Doe");
+
+Command: type "Nhập họ và tên" input with value "ExampleName"
+DOM:
+<label>Thông tin</label>
+<input placeholder="Nhập họ và tên" type="text" name="address" />
+Code:
+cy.getInput("Nhập họ và tên").type("Hà Nội");
+
+Command: type "Bệnh đau đầu" into note textarea
+DOM:
+<textarea id="requestNote" name="note"></textarea>
+Code:
+cy.get('#requestNote').type("Bệnh đau đầu");
+
+Command: type into birthYear input with value "2000"
+DOM:
+<input id="birthYear" class="input-class" type="text" />
+Code:
+cy.get('#birthYear').type("2002");
+
+Command: check "I agree to terms" checkbox  
+DOM: <label><input type="checkbox" id="agreeTerms"> I agree to terms</label>  
+Code:  
+cy.getCheckbox("I agree to terms").check();
+
+Command: check if "Tiếp theo" button is visible
+DOM:
+<button id="nextBtn">Tiếp theo</button>
+Code:
+cy.getButton("Tiếp theo").should('be.visible');
+
+Command: "Select "Chọn giới tính" dropdown and choose option "Nam""
+DOM:
+<label for="patientSex">Giới tính</label>
+<select data-placeholder="Chọn giới tính"
+        class="form-control select2-hidden-accessible"
+        name="patientSex"
+        data-select2-id="select2-data-patientSex">
+  <option></option>
+  <option value="MALE">Nam</option>
+  <option value="FEMALE">Nữ</option>
+</select>
+
+<span class="selection">
+  <span class="select2-selection select2-selection--single" role="combobox" aria-haspopup="true">
+    <span class="select2-selection__rendered">Chọn giới tính</span>
+    <span class="select2-selection__arrow" role="presentation"></span>
+  </span>
+</span>
+Code: 
+cy.get('#patientSex').next().find('.select2-selection').click();
+cy.get('.select2-results__option').contains('Nam').click();
+
+
+
+---
+User Command: ${command}
+---
+DOM:
+\`\`\`html
+${minimizedDOM}
+\`\`\`
+Cypress Code:
+`;
+
+    try {
+      const result = await chat.sendMessage(prompt);
+      let text = (await result.response.text()).trim();
+
+      console.log("Cypress AI response:", text);
+
+      if (text.startsWith("```")) {
+        text = text
+          .replace(/```.*?\n/, "")
+          .replace(/\n```/, "")
+          .trim();
+      }
+
+      if (!text.endsWith(";")) {
+        text += ";";
+      }
+
+      combinedCode += text + "\n";
+      individualResults.push({ command, code: text });
+    } catch (err) {
+      console.error("AI error:", err);
+      individualResults.push({ command, error: err.message });
+      combinedCode += `// Error for "${command}": ${err.message}\n`;
+    }
+  }
+
+  res.json({
+    success: true,
+    individual: individualResults,
+    fullScript: combinedCode.trim(),
+  });
+});
+
+
+// app.post("/api/generate-cypress", async (req, res) => {
+//   console.log("get cypress");
+//   const { dom, commandText, apiKey } = req.body;
+
+//   if (!dom || !commandText) {
+//     return res
+//       .status(400)
+//       .json({ error: "DOM content and command are required" });
+//   }
+
+//   const minimizedDOM = html2pug(dom, { tabs: true });
+
+//   // const model = setupAI(apiKey);
+//   // if (!model) {
+//   //   return res.status(500).json({ error: "Failed to initialize Gemini AI" });
+//   // }
+
+//   // const chat = model.startChat();
+//   const commands = Array.isArray(commandText) ? commandText : [commandText];
+//   let combinedCode = "";
+//   const individualResults = [];
+
+//   for (const command of commands) {
+//     const model = setupAI(apiKey);
+//     if (!model) {
+//       return res.status(500).json({ error: "Failed to initialize Gemini AI" });
+//     }
+
+//     const chat = model.startChat();
+//     console.log("Command:", command);
+//     const prompt = `
+// Your task is to generate Cypress autotest code based on the user's command and the provided DOM structure.
+
+// Instructions:
+// 1. Analyze the user command and the provided DOM structure.
+// 2. Identify ONLY the target element based on the command.
+// 3. Generate the appropriate Cypress command to interact with the element. You MUST only generate Cypress code strictly for the provided command.
+// DO NOT generate Cypress code for other parts of the DOM or unrelated fields.
+// IMPORTANT: DO NOT add or assume any class, id, attribute, or state (like '.loading', '.active', ':hover', etc.) that is NOT present in the provided DOM into Cypress code.
+// 4. Output ONLY the Cypress code. Do NOT include any other text, explanations, or markdown.
+// 5. For common elements (not input elements), prefer these custom commands:
+//    - cy.getButton("Button Text")
+//    - cy.getCheckbox("Label")
+//    - cy.getDialog("Title or Label")
+//    - cy.getMenuItem("Text") — for select dropdown options
+
+// For select dropdowns, follow this pattern:
+// - Click the dropdown trigger by id or class (e.g. cy.get('#selectId"]').click())
+// - Use: cy.getMenuItem("Option Text").click()
+
+// After selecting, always add: .should('have.value', VALUE), if the expected value is known.
+// If the <select> has class select2-hidden-accessible or appears to be enhanced with Select2, then:
+// - Click the visible UI element (e.g. .select2, .select2-selection, or adjacent span).
+// - Click the desired option text from the dropdown list.
+// Example:
+
+// cy.get('#select-id').next().find('.select2-selection').click();
+// cy.get('.select2-results__option').contains('Visible Option Text').click();
+// Do not use .select() for Select2-enhanced dropdowns.
+// 6. For select commands, USE getMenuItem("Text")
+// 7. Add a .should('have.value', VALUE) check after each select action.
+// 8. ALWAYS ensure Cypress selectors target only **enabled** elements.
+
+//    - Do not attempt to interact with any element that is disabled or marked as aria-disabled.
+//    - If there are multiple matching elements, filter by enabled ones before applying index.
+// 9. For **input elements**, follow this priority to determine the selector method:
+//     a. If there is a <label for="..."> that matches the input by id, use:
+//        → cy.getInput("Label Text").type("...") — custom command using 'label'
+//     b. Else if input has a 'placeholder', use:
+//        → cy.getInput("Placeholder Text").type("...")
+//        (custom command matched by placeholder)
+//     c. If the input element has neither a matching label with 'for' nor a placeholder attribute, then fall back to using a standard Cypress selector targeting the element by id or class exactly as it appears in the DOM: cy.get('#id'), cy.get('.class')
+// 10. When the user command specifies the n-th element (e.g., "the 2nd button", or "the 3rd checkbox"):
+//     - Use the :eq(n) selector to target the n-th element (0-based index).
+// 11. For commands that check element visibility or disabled status, generate Cypress assertions accordingly:
+
+// To check if an element is visible:
+// Use .should('be.visible')
+
+// To check if an element is not visible:
+// Use .should('not.be.visible')
+
+// To check if an element is not disabled:
+// Use .should('not.be.disabled')
+
+// To check if an element is disabled:
+// Use .should('be.disabled')
+
+// Use the appropriate selector as per rules above (custom commands or cy.get() selectors).
+
+//     Example:
+
+// Command: click "Submit" button  
+// DOM: <button id="submitBtn">Submit</button>  
+// Code:  
+// cy.getButton("Submit").click();
+
+// Command: Select "Option Two" from dropdown
+// DOM:
+// <select id="simple-select">
+//   <option>Option One</option>
+//   <option>Option Two</option>
+//   <option>Option Three</option>
+// </select>
+// Code:
+// cy.get('#simple-select').click();
+// cy.getMenuItem('Option Two').click();
+
+
+// Command:  type "Họ và tên" input with value "ExampleName"
+// DOM:
+// <label for="patientName">Họ và tên</label>
+// <input id="patientName" type="text" />
+// Code:
+// cy.getInput("Họ và tên").type("John Doe");
+
+// Command: type "Nhập họ và tên" input with value "ExampleName"
+// DOM:
+// <label>Thông tin</label>
+// <input placeholder="Nhập họ và tên" type="text" name="address" />
+// Code:
+// cy.getInput("Nhập họ và tên").type("Hà Nội");
+
+// Command: type "Bệnh đau đầu" into note textarea
+// DOM:
+// <textarea id="requestNote" name="note"></textarea>
+// Code:
+// cy.get('#requestNote').type("Bệnh đau đầu");
+
+// Command: type into birthYear input with value "2000"
+// DOM:
+// <input id="birthYear" class="input-class" type="text" />
+// Code:
+// cy.get('#birthYear').type("2002");
+
+// Command: check "I agree to terms" checkbox  
+// DOM: <label><input type="checkbox" id="agreeTerms"> I agree to terms</label>  
+// Code:  
+// cy.getCheckbox("I agree to terms").check();
+
+// Command: check if "Tiếp theo" button is visible
+// DOM:
+// <button id="nextBtn">Tiếp theo</button>
+// Code:
+// cy.getButton("Tiếp theo").should('be.visible');
+
+// Command: "Select "Chọn giới tính" dropdown and choose option "Nam""
+// DOM:
+// <label for="patientSex">Giới tính</label>
+// <select data-placeholder="Chọn giới tính"
+//         class="form-control select2-hidden-accessible"
+//         name="patientSex"
+//         data-select2-id="select2-data-patientSex">
+//   <option></option>
+//   <option value="MALE">Nam</option>
+//   <option value="FEMALE">Nữ</option>
+// </select>
+
+// <span class="selection">
+//   <span class="select2-selection select2-selection--single" role="combobox" aria-haspopup="true">
+//     <span class="select2-selection__rendered">Chọn giới tính</span>
+//     <span class="select2-selection__arrow" role="presentation"></span>
+//   </span>
+// </span>
+// Code: 
+// cy.get('#patientSex').next().find('.select2-selection').click();
+// cy.get('.select2-results__option').contains('Nam').click();
+
+
+
+// ---
+// User Command: ${command}
+// ---
+// DOM:
+// \`\`\`html
+// ${minimizedDOM}
+// \`\`\`
+// Cypress Code:
+// `;
+
+//     try {
+//       const result = await chat.sendMessage(prompt);
+//       let text = (await result.response.text()).trim();
+
+//       console.log("Cypress AI response:", text);
+
+//       if (text.startsWith("```")) {
+//         text = text
+//           .replace(/```.*?\n/, "")
+//           .replace(/\n```/, "")
+//           .trim();
+//       }
+
+//       if (!text.endsWith(";")) {
+//         text += ";";
+//       }
+
+//       combinedCode += text + "\n";
+//       individualResults.push({ command, code: text });
+//     } catch (err) {
+//       console.error("AI error:", err);
+//       individualResults.push({ command, error: err.message });
+//       combinedCode += `// Error for "${command}": ${err.message}\n`;
+//     }
+//   }
+
+//   res.json({
+//     success: true,
+//     individual: individualResults,
+//     fullScript: combinedCode.trim(),
+//   });
+// });
+
+
+
+
+// app.post("/api/process-dom-and-cypress", async (req, res) => {
+//   const { dom, commands, apiKey } = req.body;
+
+//   if (!dom || !commands || !Array.isArray(commands) || commands.length === 0) {
+//     return res
+//       .status(400)
+//       .json({ error: "DOM content and commands array are required" });
+//   }
+
+//   try {
+//     const minimizedDOM = html2pug(dom, { tabs: true });
+
+//     const genAI = new GoogleGenerativeAI(apiKey);
+//     // return genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
+//     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
+//     if (!model) {
+//       return res.status(500).json({ error: "Failed to initialize Gemini AI" });
+//     }
+
+//     let combinedCypressCode = "";
+//     const targetElements = [];
+//     const chat = model.startChat();
+
+//     // Process each command
+//     for (const command of commands) {
+//       console.log("Processing command:", command);
+
+//       // Combined prompt that handles both DOM analysis and Cypress generation
+//       const combinedPrompt = `
+// Your task is to act as a DOM interaction planner and Cypress code generator. Analyze the user command and the provided DOM structure to:
+// 1. Identify the target element and intended action
+// 2. Generate corresponding Cypress test code
+
+// DOM ANALYSIS INSTRUCTIONS:
+// Instructions:
+// 1. Find the target element based on the Command and DOM.
+// 2. Determine the best CSS selector using this priority: id > data-testid > class > tag+attributes.
+// 3. Identify the action: "click", "type", "focus", "submit", "select", ...
+// 4. For "select" action, determine if it's a regular select or Select2 dropdown (has class "select2-hidden-accessible").
+// 5. For Select2, identify the option value from the DOM (not just the display text).
+// 6. For "type" or "select" action, extract the value from the Command.
+// 7. IMPORTANT: If the Command specifies a particular element among many similar ones (e.g., "the second button", "the last checkbox", "the button next to the user icon"), determine the correct index or relative position.
+// 8. CRITICAL: NEVER select disabled elements. Check for all possible indicators of disabled state:
+//    - Elements with attribute 'disabled'
+//    - Elements with attribute 'aria-disabled="true"'
+
+//    - Parent elements that might contain the above attributes/classes
+// 9. If multiple elements match your selector, but some are disabled, only consider the enabled ones for indexing.
+
+// Example for clicking a specific button: {"selector": "button.primary", "action": "click", "index": 1}
+// Example for clicking based on position: {"selector": "button.primary", "action": "click", "positionHint": "next-to:.user-icon"}
+// Example for selecting an option: {"selector": "[data-testid='booking-province-droplist']", "action": "select", "value": "Tỉnh An Giang", "isSelect2": true, "optionValue": "89"}
+
+// If the command is ambiguous or the element/action cannot be determined, return JSON: {"error": "Cannot determine action or selector."}
+
+// CYPRESS CODE GENERATION INSTRUCTIONS:
+// Instructions:
+// 1. Analyze the user command and the provided DOM structure.
+// 2. Identify ONLY the target element based on the command.
+// 3. Generate the appropriate Cypress command to interact with the element. You MUST only generate Cypress code strictly for the provided command.
+// DO NOT generate Cypress code for other parts of the DOM or unrelated fields.
+// IMPORTANT: DO NOT add or assume any class, id, attribute, or state (like '.loading', '.active', ':hover', etc.) that is NOT present in the provided DOM into Cypress code.
+// 4. Output ONLY the Cypress code. Do NOT include any other text, explanations, or markdown.
+// 5. For SELECT elements, especially when enhanced with Select2 or similar libraries (class 'select2-hidden-accessible'), always use:
+//    cy.get('selector').select('value', { force: true });
+// 6. For select commands, extract the VALUE from <option value="">, not just the text.
+// 7. Add a .should('have.value', VALUE) check after each select action.
+// 8. ALWAYS ensure Cypress selectors target only **enabled** elements.
+//    - Add the following filter to your selector when needed:
+//      :not([disabled])
+//    - Do not attempt to interact with any element that is disabled or marked as aria-disabled.
+//    - If there are multiple matching elements, filter by enabled ones before applying index.
+// 9. Avoid using placeholder attributes in selectors. Prefer data-testid, id, name, class, tagname or other stable attributes.
+
+// Example:
+// Command: select "Tỉnh An Giang" in province dropdown  
+// DOM: <select data-testid="booking-province-droplist"><option value="89">Tỉnh An Giang</option></select>
+// Code:
+// cy.get('[data-testid="booking-province-droplist"]').select('89', { force: true });
+// cy.get('[data-testid="booking-province-droplist"]').should('have.value', '89');
+
+// Command: type "Nhập họ và tên" input with value "fullname-input"
+// DOM: <input type="text" id="patientName" placeholder="Nhập họ và tên">
+// Code:
+// cy.get('#patientName').type('fullname-input');
+// Output Format:
+// Return ONLY a single-line JSON object with both target element info and Cypress code. Do NOT include any other text, explanations, or markdown.
+
+// Structure:
+// {
+//   "selector": "<CSS selector string>",
+//   "action": "<action name>",
+//   "value": "<value string>", // Include for "type" or "select" actions
+//   "isSelect2": true/false,   // Include for "select" actions
+//   "optionValue": "<option value attribute>", // Include for "select" actions with Select2
+//   "index": 0,  // Include when there are multiple matching elements (0-based index)
+//   "positionHint": "next-to:selector", // Optional hint for relative positioning
+//   "isEnabled": true,
+//   "jsCode": "<A short, clean JavaScript snippet to execute the action>",
+//   "cypressCode": "<Clean Cypress code without markdown or explanations>"
+// }
+
+// If the command is ambiguous or the element/action cannot be determined, return JSON: {"error": "Cannot determine action or selector."}
+
+// Examples:
+// - Click button: {"selector": "button.primary", "action": "click", "index": 1, "cypressCode": "cy.get('button.primary:not([disabled])').eq(1).click();"}
+// - Select option: {"selector": "[data-testid='province-select']", "action": "select", "value": "Tỉnh An Giang", "isSelect2": true, "optionValue": "89", "cypressCode": "cy.get('[data-testid=\"province-select\"]').select('89', { force: true });\ncy.get('[data-testid=\"province-select\"]').should('have.value', '89');"}
+// - Type text: {"selector": "#patientName", "action": "type", "value": "John Doe", "cypressCode": "cy.get('#patientName:not([disabled])').type('John Doe');"}
+
+// ---
+// Command: ${command}
+// ---
+// DOM:
+// \\html
+// ${minimizedDOM}
+// \\
+// ---`;
+
+//       try {
+//         const result = await chat.sendMessage(combinedPrompt);
+//         let aiResponseText = result.response.text().trim();
+
+//         // Clean up response if it's wrapped in markdown
+//         if (aiResponseText.startsWith("```json")) {
+//           aiResponseText = aiResponseText.substring(7);
+//           if (aiResponseText.endsWith("```")) {
+//             aiResponseText = aiResponseText.substring(
+//               0,
+//               aiResponseText.length - 3
+//             );
+//           }
+//           aiResponseText = aiResponseText.trim();
+//         }
+
+//         try {
+//           const aiResponse = JSON.parse(aiResponseText);
+
+//           if (aiResponse.error) {
+//             targetElements.push({
+//               command,
+//               error: aiResponse.error,
+//             });
+//             combinedCypressCode += `// Error for "${command}": ${aiResponse.error}\n`;
+//             continue;
+//           }
+
+//           // Enhanced disabled validation for selector
+//           if (
+//             aiResponse.selector &&
+//             !aiResponse.selector.includes(":not([disabled])")
+//           ) {
+//             aiResponse.selector =
+//               aiResponse.selector +
+//               ':not([disabled]):not([aria-disabled="true"]):not(.disabled)';
+//           }
+
+//           // Add target element info
+//           const targetElement = {
+//             command,
+//             selector: aiResponse.selector,
+//             action: aiResponse.action,
+//             value: aiResponse.value,
+//             isSelect2: aiResponse.isSelect2,
+//             optionValue: aiResponse.optionValue,
+//             index: aiResponse.index,
+//             positionHint: aiResponse.positionHint,
+//             isEnabled: aiResponse.isEnabled !== false,
+//             jsCode: aiResponse.jsCode,
+//           };
+
+//           targetElements.push(targetElement);
+
+//           // Add Cypress code
+//           if (aiResponse.cypressCode) {
+//             let cypressCode = aiResponse.cypressCode.trim();
+
+//             // Clean up Cypress code if wrapped in markdown
+//             if (cypressCode.startsWith("```")) {
+//               cypressCode = cypressCode
+//                 .replace(/```.*?\n/, "")
+//                 .replace(/\n```/, "")
+//                 .trim();
+//             }
+
+//             if (!cypressCode.endsWith(";")) {
+//               cypressCode += ";";
+//             }
+
+//             combinedCypressCode += cypressCode + "\n";
+//           }
+//         } catch (parseError) {
+//           console.error("Error parsing AI response:", parseError);
+//           targetElements.push({
+//             command,
+//             error: "Failed to parse AI response",
+//           });
+//           combinedCypressCode += `// Error parsing response for "${command}"\n`;
+//         }
+//       } catch (aiError) {
+//         console.error("AI error for command:", command, aiError);
+//         targetElements.push({
+//           command,
+//           error: aiError.message,
+//         });
+//         combinedCypressCode += `// AI Error for "${command}": ${aiError.message}\n`;
+//       }
+//     }
+
+//     // Return combined results
+//     res.json({
+//       success: true,
+//       targetElements,
+//       combinedCypressCode: combinedCypressCode.trim(),
+//       totalCommands: commands.length,
+//       processedSuccessfully: targetElements.filter((el) => !el.error).length,
+//     });
+//   } catch (error) {
+//     console.error("Error processing DOM with AI:", error);
+//     res.status(500).json({
+//       error: "Failed to process DOM with AI",
+//       details: error.message,
+//     });
+//   }
+// });
+
+
+
+
+
+// Unified API: /api/analyze-and-generate
+
+
+
+
+// Start server
+
+app.listen(port, () => {
+  console.log(`Server is running at http://localhost:${port}`);
+});

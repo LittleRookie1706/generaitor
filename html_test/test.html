@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>My Simple Blog</title>
+  <link rel="stylesheet" href="style.css">
+
+</head>
+
+<body>
+  <h1>Welcome to My Blog</h1>
+
+  <label for="username">Tên người dùng:</label>
+  <input type="text" id="username" name="username" />
+
+  <label>
+    <input type="checkbox" name="option1" value="1">
+    Option 1
+  </label><br>
+  
+  <label>
+    <input type="checkbox" name="option2" value="2">
+    Option 2
+  </label><br>
+  
+  <label>
+    <input type="checkbox" name="option3" value="3">
+    Option 3
+  </label>
+  
+
+
+  <div class="test">
+    <span>daDADSD</span>
+  </div>
+  <button id="btn1" style="background-color: greenyellow;">Submit Comment</button>
+  <h2 class="invisible">ABCDEF</h2>
+  <button id="showErrorBtn">Hiển thị lỗi</button>
+
+  <h3 id="errorMessage" style="display: none;">Latest Posts</h3>
+
+  <div class="blog-post">
+    <h2 style="color: green;">First Blog Post</h2>
+    <p>This is the content of my first blog post. It's simple but demonstrates normal content.</p>
+  </div>
+
+  <div class="blog-post">
+    <h2>Second Blog Post</h2>
+    <p>This post has a hidden message below (not visible to users).</p>
+    <p class="error-message" id="test">This is a hidden spoiler message!</p>
+    <button id="view-detail" onclick="view()">View detail</button>
+  </div>
+
+  <div class="blog-post" hidden>
+    <h2>Third Blog Post</h2>
+    <p>This post is hidden from view.</p>
+    <button>click</button>
+  </div>
+
+  <select id="select-province" class="select-class">
+    <option value="1" id="option-1" class="option-class">Hải Dương</option>
+    <option value="2" id="option-2" class="option-class">Hải Phòng</option>
+    <option value="3" id="option-3" class="option-class">Hà Nội</option>
+  </select>
+
+  <label for="khoa-kham">Chọn khoa khám bệnh:</label>
+  <select id="khoa-kham" name="khoa-kham">
+    <option value="">-- Chọn khoa --</option>
+    <option value="noi">Khoa Nội</option>
+    <option value="ngoai">Khoa Ngoại</option>
+    <option value="san">Khoa Sản</option>
+    <option value="nhi">Khoa Nhi</option>
+    <option value="rang-ham-mat">Khoa Răng - Hàm - Mặt</option>
+    <option value="mat">Khoa Mắt</option>
+    <option value="tai-mui-hong">Khoa Tai - Mũi - Họng</option>
+    <option value="da-lieu">Khoa Da liễu</option>
+    <option value="tim-mach">Khoa Tim mạch</option>
+    <option value="kham-tong-quat">Khám tổng quát</option>
+  </select>
+
+
+  <h3>Leave a Comment</h3>
+  <input type="text" placeholder="Write your comment..." class="comment-box">
+
+  <br><br>
+
+  <button id="btn2" style="background-color: greenyellow;">Submit Comment</button>
+  <button disabled style="background-color: aqua;">Delete Comment (Disabled)</button>
+
+  <br><br>
+
+  <input type="text" value="Cannot edit this" disabled>
+
+  <!-- <script>const input = document.querySelector('input.comment-box:not([disabled]):not([aria-disabled="true"]):not(.disabled)'); if (input) { input.value = 'abccomment'; input.dispatchEvent(new Event('input', { bubbles: true })); }</script> -->
+
+  <script>
+    // Khi trang web load xong
+    document.addEventListener("DOMContentLoaded", function () {
+
+      // 1️⃣ Toggle hiện/ẩn hidden message khi click vào bài viết thứ 2
+      const secondPost = document.querySelectorAll('.blog-post')[1];
+      const hiddenMessage = secondPost.querySelector('.hidden-message');
+
+      secondPost.addEventListener('click', function () {
+        hiddenMessage.style.display = hiddenMessage.style.display === 'none' ? 'block' : 'none';
+      });
+
+      // 2️⃣ Bắt sự kiện khi người dùng nhập comment
+      const commentInput = document.querySelector('.comment-box');
+      const submitBtn = document.querySelector('button:not([disabled])');
+
+      submitBtn.addEventListener('click', function () {
+        const comment = commentInput.value.trim();
+        if (comment) {
+          alert(`You commented: ${comment}`);
+          commentInput.value = '';
+        } else {
+          alert('Please write a comment before submitting.');
+        }
+      });
+
+
+
+
+      // 4️⃣ Highlight input khi focus
+      commentInput.addEventListener('focus', function () {
+        commentInput.style.borderColor = 'blue';
+      });
+
+      commentInput.addEventListener('blur', function () {
+        commentInput.style.borderColor = '#888';
+      });
+
+    });
+
+    document.getElementById('showErrorBtn').addEventListener('click', function () {
+      document.getElementById('errorMessage').style.display = 'block';
+    });
+
+    document.getElementById('btn2').addEventListener('click', function () {
+      alert("send comment");
+    });
+
+    function view() {
+      alert("View detail");
+    }
+
+  </script>
+</body>
+
+</html>
