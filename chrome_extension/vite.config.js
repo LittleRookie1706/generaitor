@@ -5,9 +5,7 @@ import { fileURLToPath, URL } from "node:url"; // Import URL for path resolution
 
 // https://vite.dev/config/
 export default defineConfig({
-  define: {
-    'process.env': {}
-  },
+  
   plugins: [vue()],
   build: {
     rollupOptions: {

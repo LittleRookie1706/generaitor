@@ -25,5 +25,7 @@ dist-ssr
 
 
 draft.txt
-
+settings.json
+bookingcare_prompt.txt
+.server/test.js
 

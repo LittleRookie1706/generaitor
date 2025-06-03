@@ -3,7 +3,6 @@ import { ref, computed, watch, nextTick } from "vue";
 import { useDateFormat, useLocalStorage, useScroll } from "@vueuse/core";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getMinimizedDOM } from "./utils/domUtils.js";
-import { performElementAction } from "./utils/domUtils.js";
 
 import { isVisible } from "element-is-visible";
 
@@ -19,36 +18,49 @@ const modelInstance = ref(null);
 const showApiKeyInput = ref(!apiKey.value);
 
 // Function to initialize or update the Gemini client
-const initializeGemini = (key) => {
+// const initializeGemini = (key) => {
+//   if (key) {
+//     try {
+//       const genAI = new GoogleGenerativeAI(key);
+//       genAIInstance.value = genAI;
+//       modelInstance.value = genAI.getGenerativeModel({
+//         model: "gemini-2.0-flash-lite",
+//       });
+//       console.log("Gemini client initialized successfully.");
+//       showApiKeyInput.value = false;
+//     } catch (error) {
+//       console.error("Failed to initialize Gemini client:", error);
+//       showApiKeyInput.value = true;
+//       genAIInstance.value = null;
+//       modelInstance.value = null;
+//       messages.value.push({
+//         id: Date.now(),
+//         text: "Failed to initialize Gemini with the provided key.",
+//         sender: "bot",
+//         timestamp: Date.now(),
+//       });
+//     }
+//   } else {
+//     genAIInstance.value = null;
+//     modelInstance.value = null;
+//     console.log("Gemini client requires an API key.");
+//     showApiKeyInput.value = true;
+//   }
+// };
+
+const showHideApiKeyInput = (key) => {
   if (key) {
-    try {
-      const genAI = new GoogleGenerativeAI(key);
-      genAIInstance.value = genAI;
-      modelInstance.value = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash-lite",
-      });
-      console.log("Gemini client initialized successfully.");
-      showApiKeyInput.value = false;
-    } catch (error) {
-      console.error("Failed to initialize Gemini client:", error);
-      showApiKeyInput.value = true;
-      genAIInstance.value = null;
-      modelInstance.value = null;
-      messages.value.push({
-        id: Date.now(),
-        text: "Failed to initialize Gemini with the provided key.",
-        sender: "bot",
-        timestamp: Date.now(),
-      });
-    }
+    
+    showApiKeyInput.value = false;
+    console.log("showApiKeyInput.value1:", showApiKeyInput.value);
+
+    
   } else {
-    genAIInstance.value = null;
-    modelInstance.value = null;
+    
     console.log("Gemini client requires an API key.");
     showApiKeyInput.value = true;
   }
 };
-
 // Function to scroll messages area to bottom
 const scrollToBottom = () => {
   nextTick(() => {
@@ -62,7 +74,7 @@ const scrollToBottom = () => {
 watch(
   apiKey,
   (newKey) => {
-    initializeGemini(newKey);
+    showHideApiKeyInput(newKey);
   },
   { immediate: true }
 );
@@ -92,564 +104,6 @@ const formattedTimestamp = (ts) => {
   return useDateFormat(ts, "HH:mm").value;
 };
 
-const sendMessage2 = async () => {
-  const userText = newMessage.value.trim();
-  if (
-    userText === "" ||
-    isLoading.value ||
-    !isApiKeySet.value ||
-    !modelInstance.value
-  ) {
-    if (!isApiKeySet.value) {
-      alert("Please set your Gemini API Key first.");
-    }
-    return;
-  }
-
-  // Handle both explicit newlines and "\n" as text
-  const commands = userText
-    .replace(/\\n/g, "\n") // Replace "\n" text with actual newlines
-    .split("\n")
-    .map((cmd) => cmd.trim())
-    .filter((cmd) => cmd !== ""); // Split into commands
-
-  if (commands.length === 0) {
-    return; // No commands to process
-  }
-
-  messages.value.push({
-    id: Date.now(),
-    text: `Commands: ${userText}`,
-    sender: "user",
-    timestamp: Date.now(),
-  });
-
-  newMessage.value = "";
-  isLoading.value = true;
-  let combinedCypressCode = "";
-
-  console.log("Detected commanddds:", commands); // Debug log
-
-  // Process each command separately
-  for (const commandText of commands) {
-    try {
-      const currentDOM = document.body.outerHTML;
-      const prompt = `
-          Your task is to generate Cypress autotest code based on the user's command and the provided DOM structure.
-
-          Instructions:
-          1.  Analyze the user command and the provided DOM structure.
-          2.  Identify the target element based on the command.
-          3.  Generate the appropriate Cypress command to interact with the element.
-          4.  Output ONLY the Cypress code. Do NOT include any other text, explanations, or markdown.
-          5.  For SELECT elements, especially when they appear to be enhanced with Select2 or similar libraries (check for classes like 'select2-hidden-accessible'), always use the force approach:
-              cy.get('selector').select('value', { force: true })
-          6.  For select commands, identify both the visible text and the actual option value from the DOM.
-          
-          SPECIFIC HANDLING FOR SELECT COMMANDS:
-           - When a user command mentions selecting an option (like "select X in Y dropdown"):
-             1. Find the select element in the DOM
-             2. Look for the option with text matching what the user specified
-             3. Get the VALUE attribute of that option (not just the display text)
-             4. Use .select(VALUE, { force: true }) in the Cypress code
-             5. Add a verification step using .should('have.value', VALUE)
-          Example:
-          User Command: select "Tỉnh An Giang" in province dropdown
-           DOM: (contains <select data-testid="booking-province-droplist"><option value="89">Tỉnh An Giang</option>...)
-           Cypress Code:
-           cy.get('[data-testid="booking-province-droplist"]').select('89', { force: true });
-           cy.get('[data-testid="booking-province-droplist"]').should('have.value', '89');
-          User Command: click a time slot button (eg: 09:30 - 10:00)
-          DOM:
-          \`\`\`html
-          <button class="time-slot" data-time="09:30-10:00">09:30 - 10:00</button>
-          \`\`\`
-          Cypress Code:
-          it('should click time slot', () => {
-            cy.get('button.time-slot[data-time="09:30-10:00"]').click()
-
-          });
-
-          ---
-          User Command: ${commandText}
-          ---
-          DOM:
-          \`\`\`html
-          ${currentDOM}
-          \`\`\`
-          Cypress Code:`;
-
-      const chat = modelInstance.value.startChat();
-      const result = await chat.sendMessage(prompt);
-      const response = await result.response;
-      let cypressCode = (await response.text()).trim();
-
-      console.log("Raw AI response:", cypressCode);
-
-      // Clean potential Markdown fences
-      if (cypressCode.startsWith("```")) {
-        cypressCode = cypressCode
-          .replace(/```.*?\n/, "")
-          .replace(/\n```/, "")
-          .trim();
-      }
-
-      // Add individual command response to the messages
-      messages.value.push({
-        id: Date.now() + Math.random(),
-        text: `Command: ${commandText}\nCypress Code: ${cypressCode}`,
-        sender: "bot",
-        timestamp: Date.now(),
-      });
-
-      // Add a semicolon if needed and ensure each command is on a new line
-      if (!cypressCode.trim().endsWith(";")) {
-        cypressCode = cypressCode.trim() + ";";
-      }
-      combinedCypressCode += cypressCode + "\n"; // Append to combined code
-    } catch (apiError) {
-      console.error("Gemini API error:", apiError);
-      const errorMessage = `// Error generating code for command: ${commandText}\n// ${apiError.message}`;
-
-      // Add error message for this specific command
-      messages.value.push({
-        id: Date.now() + Math.random(),
-        text: `Command: ${commandText}\nError: ${apiError.message}`,
-        sender: "bot",
-        timestamp: Date.now(),
-      });
-
-      combinedCypressCode += errorMessage + "\n";
-    }
-  }
-
-  // Format the combined Cypress code for better readability
-  const formattedCypressCode = combinedCypressCode
-    .split("\n")
-    .filter((line) => line.trim() !== "")
-    .map((line) => line.trim())
-    .join("\n");
-
-  // Add the final combined message with all Cypress code
-  messages.value.push({
-    id: Date.now() + Math.random(),
-    text: `Complete Cypress Test:\n${formattedCypressCode}`,
-    sender: "bot",
-    timestamp: Date.now(),
-  });
-
-  isLoading.value = false;
-};
-
-const sendMessage_gencode = async () => {
-  const userText = newMessage.value.trim();
-  if (userText === "" || isLoading.value) {
-    return;
-  }
-
-  // const code = 'document.getElementById("view-detail")?.click();';
-  // const fn = new Function(code);
-  // fn();
-
-  const commands = userText
-    .split("\n")
-    .map((cmd) => cmd.trim())
-    .filter((cmd) => cmd !== "");
-  if (commands.length === 0) {
-    return;
-  }
-
-    messages.value.push({
-    id: Date.now(),
-    text: `Commands: ${userText}`,
-    sender: "user",
-    timestamp: Date.now(),
-    });
-
-  // Remove the "On processing..." message
-  const processingMessageIndex = messages.value.findIndex(msg => msg.id === processingMessageId);
-  if (processingMessageIndex !== -1) {
-    messages.value.splice(processingMessageIndex, 1);
-  }
-
-  // ===========================
-
-  const API_URL = "http://localhost:3000/api/generate-cypress";
-
-  try {
-    console.log("document.body:", document);
-    const currentDOM = getMinimizedDOM(document.body);
-
-    // document.body.parentNode.replaceChild(originalDOM, document.body);
-
-    console.log("Current DOM:", currentDOM.outerHTML);
-
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        dom: currentDOM.outerHTML,
-        commandText: commands,
-        apiKey: apiKey.value,
-      }),
-    });
-
-    // const response = await fetch(API_URL, {
-    //   method: "POST",
-    //   headers: {
-    //     "Content-Type": "application/json",
-    //   },
-    //   body: JSON.stringify({
-    //     dom: currentDOM.outerHTML,
-    //     commandText: commandText,
-    //     apiKey: apiKey.value,
-    //   }),
-    // });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API Error: ${errorData.error || response.statusText}`);
-    }
-
-    const data = await response.json();
-    let aiResponseText = data.aiResponse;
-
-    console.log("AI response from API:", data);
-
-    for (const item of data.individual) {
-      if (item.error) {
-        messages.value.push({
-          text: `Command: ${item.command}\nError: ${item.error}`,
-          sender: "bot",
-        });
-      } else {
-        messages.value.push({
-          text: `Command: ${item.command}\nCypress Code:\n${item.code}`,
-          sender: "bot",
-        });
-      }
-    }
-
-    messages.value.push({
-      text: `Complete Cypress Test:\n${data.fullScript}`,
-      sender: "bot",
-    });
-  } catch (apiError) {
-    console.error("API error:", apiError);
-    messages.value.push({
-      id: Date.now() + 1,
-      text: `Error: ${apiError.message}`,
-      sender: "bot",
-      timestamp: Date.now(),
-    });
-  }
-
-  isLoading.value = false;
-};
-
-// =================================
-
-// last version ================
-
-// DOM is minimized: hidden elements removed, scripts/styles removed, 'disabled' attribute preserved.
-
-const sendMessage_interact = async () => {
-  const userText = newMessage.value.trim();
-  if (userText === "" || isLoading.value) {
-    return;
-  }
-
-  // const code = 'document.getElementById("view-detail")?.click();';
-  // const fn = new Function(code);
-  // fn();
-
-  const commands = userText
-    .split("\n")
-    .map((cmd) => cmd.trim())
-    .filter((cmd) => cmd !== "");
-  if (commands.length === 0) {
-    return;
-  }
-
-  messages.value.push({
-    id: Date.now(),
-    text: `Commands: ${userText}`,
-    sender: "user",
-    timestamp: Date.now(),
-  });
-
-  newMessage.value = "";
-  isLoading.value = true;
-
-  const API_URL = "http://localhost:3000/api/process-dom";
-
-  for (const commandText of commands) {
-    try {
-      console.log("document.body:", document);
-      const currentDOM = getMinimizedDOM(document.body);
-
-      // document.body.parentNode.replaceChild(originalDOM, document.body);
-
-      console.log("Current DOM:", currentDOM.outerHTML);
-      const response = await fetch(API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dom: currentDOM.outerHTML,
-          commandText: commandText,
-          apiKey: apiKey.value,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`API Error: ${errorData.error || response.statusText}`);
-      }
-
-      const data = await response.json();
-      let aiResponseText = data.aiResponse;
-
-      console.log("AI response from API:", aiResponseText);
-
-      try {
-        const actionData = JSON.parse(aiResponseText);
-
-        if (actionData.error) {
-          messages.value.push({
-            id: Date.now() + 1,
-            text: `AI Error: ${actionData.error}`,
-            sender: "bot",
-            timestamp: Date.now(),
-            color: "red",
-          });
-        } else if (actionData.selector && actionData.action) {
-          // Query all matching elements
-          const allMatchingElements = document.querySelectorAll(
-            actionData.selector
-          );
-          let targetElement = null;
-
-          if (allMatchingElements.length === 0) {
-            messages.value.push({
-              id: Date.now() + 1,
-              text: `Error: No elements found for selector: ${actionData.selector}`,
-              sender: "bot",
-              timestamp: Date.now(),
-              color: "red",
-            });
-            continue;
-          }
-          // Handle multiple matching elements with index
-          else if (allMatchingElements.length > 1) {
-            // If we have an index specified, use it
-            if (
-              typeof actionData.index === "number" &&
-              actionData.index >= 0 &&
-              actionData.index < allMatchingElements.length
-            ) {
-              targetElement = allMatchingElements[actionData.index];
-            }
-            // Handle position hints if provided
-            else if (actionData.positionHint) {
-              if (actionData.positionHint.startsWith("next-to:")) {
-                const nearbySelector = actionData.positionHint.substring(8);
-                const referenceElement = document.querySelector(nearbySelector);
-
-                if (referenceElement) {
-                  // Find the element closest to the reference element
-                  let closestElement = null;
-                  let closestDistance = Infinity;
-
-                  const refRect = referenceElement.getBoundingClientRect();
-                  const refMidX = refRect.left + refRect.width / 2;
-                  const refMidY = refRect.top + refRect.height / 2;
-
-                  allMatchingElements.forEach((element) => {
-                    const rect = element.getBoundingClientRect();
-                    const midX = rect.left + rect.width / 2;
-                    const midY = rect.top + rect.height / 2;
-
-                    // Calculate Euclidean distance
-                    const distance = Math.sqrt(
-                      Math.pow(midX - refMidX, 2) + Math.pow(midY - refMidY, 2)
-                    );
-
-                    if (distance < closestDistance) {
-                      closestDistance = distance;
-                      closestElement = element;
-                    }
-                  });
-
-                  targetElement = closestElement;
-                }
-              }
-            }
-            // Default to the first element if no index or position hint
-            else {
-              targetElement = allMatchingElements[0];
-            }
-          }
-          // Single element case
-          else {
-            targetElement = allMatchingElements[0];
-          }
-
-          if (!targetElement) {
-            messages.value.push({
-              id: Date.now() + 1,
-              text: `Error: Could not determine which element to interact with`,
-              sender: "bot",
-              timestamp: Date.now(),
-              color: "red",
-            });
-          } else {
-            let actionDescription = `${actionData.action} on ${actionData.selector}`;
-            if (typeof actionData.index === "number") {
-              actionDescription += ` (element #${actionData.index + 1})`;
-            }
-
-            switch (actionData.action.toLowerCase()) {
-              case "click":
-                // For click actions, we still use regular click
-                targetElement.click();
-                break;
-
-              case "select":
-                if (targetElement instanceof HTMLSelectElement) {
-                  let optionValue = null;
-
-                  // If we have a specific option value from AI
-                  if (actionData.optionValue) {
-                    optionValue = actionData.optionValue;
-                  }
-                  // Otherwise, try to find the option by text
-                  else if (actionData.value) {
-                    const options = Array.from(targetElement.options);
-                    const matchingOption = options.find((option) =>
-                      option.textContent.trim().includes(actionData.value)
-                    );
-                    if (matchingOption) {
-                      optionValue = matchingOption.value;
-                    }
-                  }
-
-                  if (optionValue !== null) {
-                    // Set the value directly (using force approach)
-                    targetElement.value = optionValue;
-                    actionDescription += ` with value "${optionValue}" (${
-                      actionData.value || ""
-                    })`;
-
-                    // Trigger events to notify frameworks like Select2
-                    // Use force approach by manually dispatching events
-                    targetElement.dispatchEvent(
-                      new Event("change", { bubbles: true })
-                    );
-
-                    // For Select2 specifically, we might need additional triggers
-                    if (
-                      actionData.isSelect2 ||
-                      targetElement.classList.contains(
-                        "select2-hidden-accessible"
-                      )
-                    ) {
-                      // Try to update the Select2 display
-                      if (
-                        window.jQuery &&
-                        window.jQuery(targetElement).data("select2")
-                      ) {
-                        window.jQuery(targetElement).trigger("change");
-                      }
-
-                      actionDescription += " (Select2 force approach)";
-                    }
-                  } else {
-                    throw new Error(
-                      `Option "${actionData.value}" not found in select element.`
-                    );
-                  }
-                } else {
-                  throw new Error(`'select' action requires a SELECT element.`);
-                }
-                break;
-
-              case "type":
-                if (typeof actionData.value === "string") {
-                  if (
-                    targetElement instanceof HTMLInputElement ||
-                    targetElement instanceof HTMLTextAreaElement
-                  ) {
-                    targetElement.value = actionData.value;
-                    actionDescription += ` with value "${actionData.value}"`;
-                    targetElement.dispatchEvent(
-                      new Event("input", { bubbles: true })
-                    );
-                    targetElement.dispatchEvent(
-                      new Event("change", { bubbles: true })
-                    );
-                  } else {
-                    throw new Error(
-                      `Element for 'type' is not an input or textarea.`
-                    );
-                  }
-                } else {
-                  throw new Error(`'type' action requires a 'value' string.`);
-                }
-                break;
-
-              case "focus":
-                targetElement.focus();
-                break;
-
-              case "submit":
-                if (targetElement instanceof HTMLFormElement) {
-                  targetElement.submit();
-                } else if (targetElement.form) {
-                  targetElement.form.submit();
-                } else {
-                  throw new Error(
-                    `Cannot 'submit' element directly, and it's not part of a form.`
-                  );
-                }
-                break;
-
-              default:
-                throw new Error(`Unsupported action: ${actionData.action}`);
-            }
-
-            messages.value.push({
-              id: Date.now() + 1,
-              text: `Executed: ${actionDescription}`,
-              sender: "bot",
-              timestamp: Date.now(),
-            });
-          }
-        } else {
-          throw new Error("Invalid JSON structure received from AI.");
-        }
-      } catch (parseOrExecError) {
-        console.error("JSON parsing or DOM execution error:", parseOrExecError);
-        messages.value.push({
-          id: Date.now() + 1,
-          text: `Execution Error: ${parseOrExecError.message}. AI Response: ${aiResponseText}`,
-          sender: "bot",
-          timestamp: Date.now(),
-        });
-      }
-    } catch (apiError) {
-      console.error("API error:", apiError);
-      messages.value.push({
-        id: Date.now() + 1,
-        text: `Error: ${apiError.message}`,
-        sender: "bot",
-        timestamp: Date.now(),
-      });
-    }
-  }
-  isLoading.value = false;
-};
 
 const sendMessage = async () => {
   console.log("sendMessage called now");
@@ -692,21 +146,21 @@ const sendMessage = async () => {
 
   const API_URL_INTERACT = "http://localhost:3000/api/process-dom";
 
-  for (const commandText of commands) {
+  for (const command of commands) {
 
     const loadingMessageId = Date.now();
     messages.value.push({
       id: loadingMessageId,
-      text: `On processing: "${commandText}"`,
+      text: `On processing: "${command}"`,
       sender: "bot",
       timestamp: Date.now(),
       color: "gray",
     });
 
-    if (commandText.toLowerCase().startsWith("check if")) {
+    if (command.toLowerCase().startsWith("check if")) {
       messages.value.push({
         id: Date.now(),
-        text: `Command: ${commandText}`,
+        text: `Command: ${command}`,
         sender: "bot",
         timestamp: Date.now(),
       });
@@ -727,7 +181,7 @@ const sendMessage = async () => {
         },
         body: JSON.stringify({
           dom: currentDOM.outerHTML,
-          commandText: commandText,
+          commandText: command,
           apiKey: apiKey.value,
         }),
       });
@@ -915,11 +369,11 @@ const sendMessage = async () => {
                 throw new Error(`Unsupported action: ${actionData.action}`);
             }
 
-            console.log("commandText:", commandText);
+            console.log("command:", command);
 
             messages.value.push({
               id: Date.now() + 1,
-              text: `Executed: ${commandText}`,
+              text: `Executed: ${command}`,
               sender: "bot",
               timestamp: Date.now(),
               color: "green",
@@ -1054,7 +508,13 @@ button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 
       .loading-indicator Thinking...
       // Update class binding to use 'user' and 'bot'
       .message(v-for="msg in messages" :key="msg.id" :class="['message-' + msg.sender]")
-        .status-dot(v-if="msg.sender === 'bot'" :style="{ backgroundColor: msg.color || '#000' }")
+        // .status-dot(v-if="msg.sender === 'bot'" :style="{ backgroundColor: msg.color || '#000' }")
+        
+        .status-dot
+          template(v-if="msg.text.startsWith('On processing') && msg.sender === 'bot'")
+            .spinner
+          template(v-else)
+            .dot(:style="{ backgroundColor: msg.color || '#000' }")
         .message-body
           .message-content(:style="{ color: msg.color }") {{ msg.text }}
           .timestamp {{ formattedTimestamp(msg.timestamp) }}

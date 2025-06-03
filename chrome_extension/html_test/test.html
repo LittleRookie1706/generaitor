@@ -95,10 +95,8 @@
   <!-- <script>const input = document.querySelector('input.comment-box:not([disabled]):not([aria-disabled="true"]):not(.disabled)'); if (input) { input.value = 'abccomment'; input.dispatchEvent(new Event('input', { bubbles: true })); }</script> -->
 
   <script>
-    // Khi trang web load xong
     document.addEventListener("DOMContentLoaded", function () {
 
-      // 1️⃣ Toggle hiện/ẩn hidden message khi click vào bài viết thứ 2
       const secondPost = document.querySelectorAll('.blog-post')[1];
       const hiddenMessage = secondPost.querySelector('.hidden-message');
 
@@ -106,7 +104,6 @@
         hiddenMessage.style.display = hiddenMessage.style.display === 'none' ? 'block' : 'none';
       });
 
-      // 2️⃣ Bắt sự kiện khi người dùng nhập comment
       const commentInput = document.querySelector('.comment-box');
       const submitBtn = document.querySelector('button:not([disabled])');
 
@@ -123,7 +120,6 @@
 
 
 
-      // 4️⃣ Highlight input khi focus
       commentInput.addEventListener('focus', function () {
         commentInput.style.borderColor = 'blue';
       });
@@ -146,6 +142,11 @@
       alert("View detail");
     }
 
+  </script>
+  <script type="module">
+    import { getMinimizedDOM } from '../src/utils/domUtils.js';
+    const minimizedHTML = getMinimizedDOM(document.body);
+    console.log(minimizedHTML);
   </script>
 </body>
 
