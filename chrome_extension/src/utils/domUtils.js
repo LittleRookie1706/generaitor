@@ -19,17 +19,12 @@ export function getMinimizedDOM(rootElement) {
     el.dataset._index = index;
   });
 
-  console.log("firstElementsInRoot:", allElementsInRoot[0]);
-  console.log("firstElementsInClone:", allElementsInClone[0]);
-
   const hiddenIndexes = new Set();
 
   allElementsInRoot.forEach((el) => {
     const visible = isVisible(el);
     console.log("Check visible (from root):", el, "Visible:", visible, "index:", el.dataset._index);
     if (!visible) {
-      // console.log("Remove ele:", el);
-      // el.remove();
 
       hiddenIndexes.add(el.dataset._index);
     }

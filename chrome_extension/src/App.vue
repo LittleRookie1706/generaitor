@@ -1,62 +1,23 @@
 <script setup>
 import { ref, computed, watch, nextTick } from "vue";
 import { useDateFormat, useLocalStorage, useScroll } from "@vueuse/core";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getMinimizedDOM } from "./utils/domUtils.js";
 
 import { isVisible } from "element-is-visible";
 
-// Template Refs
 const messagesAreaRef = ref(null);
 const { y } = useScroll(messagesAreaRef);
 
 // Reactive Gemini API Setup
 const apiKey = useLocalStorage("gemini-api-key", "");
 const apiKeyInput = ref("");
-const genAIInstance = ref(null);
-const modelInstance = ref(null);
-const showApiKeyInput = ref(!apiKey.value);
 
-// Function to initialize or update the Gemini client
-// const initializeGemini = (key) => {
-//   if (key) {
-//     try {
-//       const genAI = new GoogleGenerativeAI(key);
-//       genAIInstance.value = genAI;
-//       modelInstance.value = genAI.getGenerativeModel({
-//         model: "gemini-2.0-flash-lite",
-//       });
-//       console.log("Gemini client initialized successfully.");
-//       showApiKeyInput.value = false;
-//     } catch (error) {
-//       console.error("Failed to initialize Gemini client:", error);
-//       showApiKeyInput.value = true;
-//       genAIInstance.value = null;
-//       modelInstance.value = null;
-//       messages.value.push({
-//         id: Date.now(),
-//         text: "Failed to initialize Gemini with the provided key.",
-//         sender: "bot",
-//         timestamp: Date.now(),
-//       });
-//     }
-//   } else {
-//     genAIInstance.value = null;
-//     modelInstance.value = null;
-//     console.log("Gemini client requires an API key.");
-//     showApiKeyInput.value = true;
-//   }
-// };
+const showApiKeyInput = ref(!apiKey.value);
 
 const showHideApiKeyInput = (key) => {
   if (key) {
-    
     showApiKeyInput.value = false;
-    console.log("showApiKeyInput.value1:", showApiKeyInput.value);
-
-    
   } else {
-    
     console.log("Gemini client requires an API key.");
     showApiKeyInput.value = true;
   }
@@ -104,18 +65,11 @@ const formattedTimestamp = (ts) => {
   return useDateFormat(ts, "HH:mm").value;
 };
 
-
 const sendMessage = async () => {
-  console.log("sendMessage called now");
-
   const userText = newMessage.value.trim();
   if (userText === "" || isLoading.value) {
     return;
   }
-
-  // const code = 'document.getElementById("view-detail")?.click();';
-  // const fn = new Function(code);
-  // fn();
 
   const commands = userText
     .split("\n")
@@ -141,13 +95,13 @@ const sendMessage = async () => {
     text: "Start...",
     sender: "bot",
     timestamp: Date.now(),
-    color: "gray", 
+    color: "gray",
   });
 
   const API_URL_INTERACT = "http://localhost:3000/api/process-dom";
 
+  let aiResponseText; 
   for (const command of commands) {
-
     const loadingMessageId = Date.now();
     messages.value.push({
       id: loadingMessageId,
@@ -167,13 +121,8 @@ const sendMessage = async () => {
       continue;
     }
 
+    const currentDOM = getMinimizedDOM(document.body);
     try {
-      console.log("document.body:", document);
-      const currentDOM = getMinimizedDOM(document.body);
-
-      // document.body.parentNode.replaceChild(originalDOM, document.body);
-
-      console.log("Current DOM:", currentDOM.outerHTML);
       const response = await fetch(API_URL_INTERACT, {
         method: "POST",
         headers: {
@@ -187,216 +136,203 @@ const sendMessage = async () => {
       });
 
       // Remove loading
-      messages.value.pop();
+    messages.value.pop();
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`API Error: ${errorData.error || response.statusText}`);
-      }
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`API Error: ${errorData.error || response.statusText}`);
+    }
 
-      const data = await response.json();
+    const data = await response.json();
 
-      let aiResponseText = data.aiResponse;
+    aiResponseText = data.aiResponse;
 
-      console.log("AI response json:", aiResponseText);
-
-      try {
-        const actionData = JSON.parse(aiResponseText);
-
-        if (actionData.error) {
-          messages.value.push({
-            id: Date.now() + 1,
-            text: `AI Error: ${actionData.error}`,
-            sender: "bot",
-            timestamp: Date.now(),
-          });
-        } else if (actionData.selector && actionData.action) {
-          // Query all matching elements
-          const allMatchingElements = document.querySelectorAll(
-            actionData.selector
-          );
-          let targetElement = null;
-
-          if (allMatchingElements.length === 0) {
-            messages.value.push({
-              id: Date.now() + 1,
-              text: `Error: No elements found for selector: ${actionData.selector}`,
-              sender: "bot",
-              timestamp: Date.now(),
-            });
-            continue;
-          }
-          // Handle multiple matching elements with index
-          else if (allMatchingElements.length > 1) {
-            // If we have an index specified, use it
-            if (
-              typeof actionData.index === "number" &&
-              actionData.index >= 0 &&
-              actionData.index < allMatchingElements.length
-            ) {
-              targetElement = allMatchingElements[actionData.index];
-            }
-
-            // Default to the first element if no index or position hint
-            else {
-              targetElement = allMatchingElements[0];
-            }
-          }
-          // Single element case
-          else {
-            targetElement = allMatchingElements[0];
-          }
-
-          if (!targetElement) {
-            messages.value.push({
-              id: Date.now() + 1,
-              text: `Error: Could not determine which element to interact with`,
-              sender: "bot",
-              timestamp: Date.now(),
-            });
-          } else {
-            let actionDescription = `${actionData.action} on ${actionData.selector}`;
-            if (typeof actionData.index === "number") {
-              actionDescription += ` (element #${actionData.index + 1})`;
-            }
-
-            switch (actionData.action.toLowerCase()) {
-              case "click":
-                // For click actions, we still use regular click
-                targetElement.click();
-                break;
-
-              case "select":
-                if (targetElement instanceof HTMLSelectElement) {
-                  let optionValue = null;
-
-                  // If we have a specific option value from AI
-                  if (actionData.optionValue) {
-                    optionValue = actionData.optionValue;
-                  }
-                  // Otherwise, try to find the option by text
-                  else if (actionData.value) {
-                    const options = Array.from(targetElement.options);
-                    const matchingOption = options.find((option) =>
-                      option.textContent.trim().includes(actionData.value)
-                    );
-                    if (matchingOption) {
-                      optionValue = matchingOption.value;
-                    }
-                  }
-
-                  if (optionValue !== null) {
-                    // Set the value directly (using force approach)
-                    targetElement.value = optionValue;
-                    actionDescription += ` with value "${optionValue}" (${
-                      actionData.value || ""
-                    })`;
-
-                    // Trigger events to notify frameworks like Select2
-                    // Use force approach by manually dispatching events
-                    targetElement.dispatchEvent(
-                      new Event("change", { bubbles: true })
-                    );
-
-                    // For Select2 specifically, we might need additional triggers
-                    if (
-                      actionData.isSelect2 ||
-                      targetElement.classList.contains(
-                        "select2-hidden-accessible"
-                      )
-                    ) {
-                      // Try to update the Select2 display
-                      if (
-                        window.jQuery &&
-                        window.jQuery(targetElement).data("select2")
-                      ) {
-                        window.jQuery(targetElement).trigger("change");
-                      }
-
-                      actionDescription += " (Select2 force approach)";
-                    }
-                  } else {
-                    throw new Error(
-                      `Option "${actionData.value}" not found in select element.`
-                    );
-                  }
-                } else {
-                  throw new Error(`'select' action requires a SELECT element.`);
-                }
-                break;
-
-              case "type":
-                if (typeof actionData.value === "string") {
-                  if (
-                    targetElement instanceof HTMLInputElement ||
-                    targetElement instanceof HTMLTextAreaElement
-                  ) {
-                    targetElement.value = actionData.value;
-                    actionDescription += ` with value "${actionData.value}"`;
-                    targetElement.dispatchEvent(
-                      new Event("input", { bubbles: true })
-                    );
-                    targetElement.dispatchEvent(
-                      new Event("change", { bubbles: true })
-                    );
-                  } else {
-                    throw new Error(
-                      `Element for 'type' is not an input or textarea.`
-                    );
-                  }
-                } else {
-                  throw new Error(`'type' action requires a 'value' string.`);
-                }
-                break;
-
-              case "focus":
-                targetElement.focus();
-                break;
-
-              case "submit":
-                if (targetElement instanceof HTMLFormElement) {
-                  targetElement.submit();
-                } else if (targetElement.form) {
-                  targetElement.form.submit();
-                } else {
-                  throw new Error(
-                    `Cannot 'submit' element directly, and it's not part of a form.`
-                  );
-                }
-                break;
-
-              default:
-                throw new Error(`Unsupported action: ${actionData.action}`);
-            }
-
-            console.log("command:", command);
-
-            messages.value.push({
-              id: Date.now() + 1,
-              text: `Executed: ${command}`,
-              sender: "bot",
-              timestamp: Date.now(),
-              color: "green",
-            });
-          }
-        } else {
-          throw new Error("Invalid JSON structure received from AI.");
-        }
-      } catch (parseOrExecError) {
-        console.error("JSON parsing or DOM execution error:", parseOrExecError);
-        messages.value.push({
-          id: Date.now() + 1,
-          text: `Execution Error: ${parseOrExecError.message}. AI Response: ${aiResponseText}`,
-          sender: "bot",
-          timestamp: Date.now(),
-          color: "red",
-        });
-      }
+    console.log("AI response json:", aiResponseText);
     } catch (apiError) {
       console.error("API error:", apiError);
       messages.value.push({
         id: Date.now() + 1,
         text: `Error: ${apiError.message}`,
+        sender: "bot",
+        timestamp: Date.now(),
+        color: "red",
+      });
+    }
+
+    
+
+    try {
+      const actionData = JSON.parse(aiResponseText);
+
+      if (actionData.error) {
+        messages.value.push({
+          id: Date.now() + 1,
+          text: `AI Error: ${actionData.error}`,
+          sender: "bot",
+          timestamp: Date.now(),
+        });
+      } else if (actionData.selector && actionData.action) {
+        // Query all matching elements
+        const allMatchingElements = document.querySelectorAll(
+          actionData.selector
+        );
+        let targetElement = null;
+
+        if (allMatchingElements.length === 0) {
+          messages.value.push({
+            id: Date.now() + 1,
+            text: `Error: No elements found for selector: ${actionData.selector}`,
+            sender: "bot",
+            timestamp: Date.now(),
+          });
+          continue;
+        }
+        // Handle multiple matching elements with index
+        else if (allMatchingElements.length > 1) {
+          if (
+            typeof actionData.index === "number" &&
+            actionData.index >= 0 &&
+            actionData.index < allMatchingElements.length
+          ) {
+            targetElement = allMatchingElements[actionData.index];
+          } else {
+            targetElement = allMatchingElements[0];
+          }
+        }
+        // Single element case
+        else {
+          targetElement = allMatchingElements[0];
+        }
+
+        if (!targetElement) {
+          messages.value.push({
+            id: Date.now() + 1,
+            text: `Error: Could not determine which element to interact with`,
+            sender: "bot",
+            timestamp: Date.now(),
+          });
+        } else {
+          let actionDescription = `${actionData.action} on ${actionData.selector}`;
+          if (typeof actionData.index === "number") {
+            actionDescription += ` (element #${actionData.index + 1})`;
+          }
+
+          switch (actionData.action.toLowerCase()) {
+            case "click":
+              targetElement.click();
+              break;
+
+            case "select":
+              if (targetElement instanceof HTMLSelectElement) {
+                let optionValue = null;
+
+                if (actionData.optionValue) {
+                  optionValue = actionData.optionValue;
+                }
+                else if (actionData.value) {
+                  const options = Array.from(targetElement.options);
+                  const matchingOption = options.find((option) =>
+                    option.textContent.trim().includes(actionData.value)
+                  );
+                  if (matchingOption) {
+                    optionValue = matchingOption.value;
+                  }
+                }
+
+                if (optionValue !== null) {
+                  targetElement.value = optionValue;
+                  actionDescription += ` with value "${optionValue}" (${
+                    actionData.value || ""
+                  })`;
+
+                  targetElement.dispatchEvent(
+                    new Event("change", { bubbles: true })
+                  );
+
+                  if (
+                    actionData.isSelect2 ||
+                    targetElement.classList.contains(
+                      "select2-hidden-accessible"
+                    )
+                  ) {
+                    if (
+                      window.jQuery &&
+                      window.jQuery(targetElement).data("select2")
+                    ) {
+                      window.jQuery(targetElement).trigger("change");
+                    }
+
+                    actionDescription += " (Select2 force approach)";
+                  }
+                } else {
+                  throw new Error(
+                    `Option "${actionData.value}" not found in select element.`
+                  );
+                }
+              } else {
+                throw new Error(`'select' action requires a SELECT element.`);
+              }
+              break;
+
+            case "type":
+              if (typeof actionData.value === "string") {
+                if (
+                  targetElement instanceof HTMLInputElement ||
+                  targetElement instanceof HTMLTextAreaElement
+                ) {
+                  targetElement.value = actionData.value;
+                  actionDescription += ` with value "${actionData.value}"`;
+                  targetElement.dispatchEvent(
+                    new Event("input", { bubbles: true })
+                  );
+                  targetElement.dispatchEvent(
+                    new Event("change", { bubbles: true })
+                  );
+                } else {
+                  throw new Error(
+                    `Element for 'type' is not an input or textarea.`
+                  );
+                }
+              } else {
+                throw new Error(`'type' action requires a 'value' string.`);
+              }
+              break;
+
+            case "focus":
+              targetElement.focus();
+              break;
+
+            case "submit":
+              if (targetElement instanceof HTMLFormElement) {
+                targetElement.submit();
+              } else if (targetElement.form) {
+                targetElement.form.submit();
+              } else {
+                throw new Error(
+                  `Cannot 'submit' element directly, and it's not part of a form.`
+                );
+              }
+              break;
+
+            default:
+              throw new Error(`Unsupported action: ${actionData.action}`);
+          }
+
+          messages.value.push({
+            id: Date.now() + 1,
+            text: `Executed: ${command}`,
+            sender: "bot",
+            timestamp: Date.now(),
+            color: "green",
+          });
+        }
+      } else {
+        throw new Error("Invalid JSON structure received from AI.");
+      }
+    } catch (parseOrExecError) {
+      messages.value.push({
+        id: Date.now() + 1,
+        text: `Execution Error: ${parseOrExecError.message}. AI Response: ${aiResponseText}`,
         sender: "bot",
         timestamp: Date.now(),
         color: "red",
@@ -408,14 +344,9 @@ const sendMessage = async () => {
 
   const API_URL = "http://localhost:3000/api/generate-cypress";
 
+  let data;
+  const currentDOM = getMinimizedDOM(document.body);
   try {
-    console.log("document.body:", document);
-    const currentDOM = getMinimizedDOM(document.body);
-
-    // document.body.parentNode.replaceChild(originalDOM, document.body);
-
-    console.log("Current DOM:", currentDOM.outerHTML);
-
     const response = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -427,38 +358,14 @@ const sendMessage = async () => {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API Error: ${errorData.error || response.statusText}`);
-    }
+    const errorData = await response.json();
+    throw new Error(`API Error: ${errorData.error || response.statusText}`);
+  }
 
-    const data = await response.json();
-    let aiResponseText = data.aiResponse;
+  data = await response.json();
+  aiResponseText = data.aiResponse;
 
-    console.log("AI response from API:", data);
-
-    for (const item of data.individual) {
-      if (item.error) {
-        messages.value.push({
-          text: `Command: ${item.command}\nError: ${item.error}`,
-          sender: "bot",
-          color: "red",
-        });
-      }
-      // else {
-      //   messages.value.push({
-      //     text: `Command: ${item.command}\nCypress Code:\n${item.code}`,
-      //     sender: "bot",
-      //   });
-      // }
-    }
-
-    messages.value.push({
-      text: `Complete Cypress Test:\n${data.fullScript}`,
-      sender: "bot",
-      color: "green",
-    });
   } catch (apiError) {
-    console.error("API error:", apiError);
     messages.value.push({
       id: Date.now() + 1,
       text: `Error: ${apiError.message}`,
@@ -467,6 +374,22 @@ const sendMessage = async () => {
       color: "red",
     });
   }
+
+  for (const item of data.individual) {
+    if (item.error) {
+      messages.value.push({
+        text: `Command: ${item.command}\nError: ${item.error}`,
+        sender: "bot",
+        color: "red",
+      });
+    }
+  }
+
+  messages.value.push({
+    text: `Complete Cypress Test:\n${data.fullScript}`,
+    sender: "bot",
+    color: "green",
+  });
 
   isLoading.value = false;
 };
@@ -478,7 +401,6 @@ watch(isChatboxVisible, async (isVisible) => {
   }
 });
 
-// Watch for new messages to scroll down (only if visible)
 watch(
   messages,
   () => {
@@ -491,24 +413,17 @@ watch(
 </script>
 
 <template lang="pug">
-// Floating button to open the chatbox
 button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 💬
 
-// The actual chatbox container, shown only when isChatboxVisible is true
 .chatbox-container(v-if="isChatboxVisible")
   .chatbox-header
     h1 Simple Chatbot
     button.close-btn(@click="isChatboxVisible = false") &times;
 
-  // Conditionally render the main content (now always rendered if container is visible)
   .chatbox-content
-    // Add ref to the messages area
     .messages-area(ref="messagesAreaRef")
-      // Add loading indicator
       .loading-indicator Thinking...
-      // Update class binding to use 'user' and 'bot'
       .message(v-for="msg in messages" :key="msg.id" :class="['message-' + msg.sender]")
-        // .status-dot(v-if="msg.sender === 'bot'" :style="{ backgroundColor: msg.color || '#000' }")
         
         .status-dot
           template(v-if="msg.text.startsWith('On processing') && msg.sender === 'bot'")
@@ -518,12 +433,6 @@ button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 
         .message-body
           .message-content(:style="{ color: msg.color }") {{ msg.text }}
           .timestamp {{ formattedTimestamp(msg.timestamp) }}
-    //- .input-area
-    //-   // Disable input and button when loading or API key not set
-    //-   //input(type="textarea" v-model="newMessage" @keyup.enter="sendMessage" :disabled="isLoading || !isApiKeySet" placeholder="Type your message...")
-    //-   textarea(v-model="newMessage" @keydown.enter.exact.prevent="sendMessage" :disabled="isLoading || !isApiKeySet" placeholder="Type your message..." rows="4")
-      
-    //-   button(@click="sendMessage" :disabled="isLoading || !isApiKeySet") Send
 
     .input-area
       textarea(
@@ -539,27 +448,8 @@ button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 
           :disabled="isLoading || !isApiKeySet"
         ) Send
     
-    //- .input-area
-    //-   // Disable textarea and button when loading or API key not set
-    //-   textarea(v-model="newMessage" @keydown.enter.exact.prevent="sendMessage" :disabled="isLoading || !isApiKeySet" placeholder="Type your message..." rows="4")
-    //-   button(@click="sendMessage" :disabled="isLoading || !isApiKeySet") Send
-
-    //- .input-area
-    //-   .input-container
-    //-     textarea.message-input(
-    //-       v-model="newMessage"
-    //-       placeholder="Type your message..."
-    //-       rows="3"
-    //-       :disabled="isLoading || !isApiKeySet"
-    //-       @keydown.enter.exact.prevent="sendMessage"
-    //-     )
-    //-     button.send-btn(
-    //-       @click="sendMessage"
-    //-       :disabled="isLoading || !isApiKeySet"
-    //-     ) Send
 
 
-    // API Key Input Area - Conditionally rendered
     .api-key-area(v-if="showApiKeyInput")
       p(v-if="!isApiKeySet" class="api-key-warning") Please set your Gemini API Key below to enable chat.
       div.api-key-input-group
@@ -569,27 +459,25 @@ button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 
 </template>
 
 <style scoped>
-/* Styles for the floating chatbox */
 .chatbox-container {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  width: 350px; /* Fixed width */
-  height: 500px; /* Fixed height */
-  max-height: 80vh; /* Limit height based on viewport */
-  display: flex; /* Keep flex for internal layout */
+  width: 350px;
+  height: 500px;
+  max-height: 80vh;
+  display: flex;
   flex-direction: column;
   border: 1px solid #ccc;
   border-radius: 8px;
-  overflow: hidden; /* Keep overflow hidden */
+  overflow: hidden;
   font-family: sans-serif;
-  background-color: white; /* Add background */
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); /* Add shadow */
-  z-index: 9999; /* Ensure it's on top */
-  transition: opacity 0.3s ease, transform 0.3s ease; /* Add transition for appearing/disappearing */
+  background-color: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 9999;
+  transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
-/* Styles for the floating open chat button */
 .open-chat-btn {
   position: fixed;
   bottom: 200px;
@@ -600,13 +488,13 @@ button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 
   color: white;
   border: none;
   border-radius: 50%;
-  font-size: 1.5em; /* Adjust icon size */
+  font-size: 1.5em;
   display: flex;
   justify-content: center;
   align-items: center;
   cursor: pointer;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-  z-index: 9998; /* Below chatbox, but above page content */
+  z-index: 9998;
   transition: background-color 0.3s ease;
 }
 .open-chat-btn:hover {
@@ -617,21 +505,18 @@ button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 10px; /* Adjust padding */
+  padding: 0 10px;
   background-color: #f1f1f1;
   border-bottom: 1px solid #ccc;
-  min-height: 40px; /* Ensure header has some height */
+  min-height: 40px;
 }
 
 h1 {
-  /* text-align: center; */ /* No longer needed with flex */
-  padding: 10px 0; /* Adjust padding */
+  padding: 10px 0;
   margin: 0;
-  /* background-color: #f1f1f1; */ /* Moved to header */
-  font-size: 1.1em; /* Slightly smaller */
-  /* border-bottom: 1px solid #ccc; */ /* Moved to header */
-  flex-grow: 1; /* Allow title to take space */
-  text-align: center; /* Center title text */
+  font-size: 1.1em;
+  flex-grow: 1;
+  text-align: center;
 }
 
 .close-btn,
@@ -647,18 +532,16 @@ h1 {
 .close-btn:hover {
   color: #000;
 }
-/* Removed .open-btn styles as it's replaced by .open-chat-btn */
 
-/* Container for messages and input */
 .chatbox-content {
   display: flex;
   flex-direction: column;
   flex-grow: 1;
-  overflow: hidden; /* Important for flex layout */
+  overflow: hidden;
 }
 
 .messages-area {
-  flex-grow: 1; /* Takes available space within chatbox-content */
+  flex-grow: 1;
   padding: 15px;
   overflow-y: auto;
   display: flex;
@@ -674,21 +557,18 @@ h1 {
   word-wrap: break-word;
 }
 
-/* Renamed from .message-me */
 .message-user {
   background-color: #dcf8c6;
   align-self: flex-end;
   text-align: right;
 }
 
-/* Rename message-other to message-bot and adjust style */
 .message-bot {
-  background-color: #e5e5ea; /* Different background for bot */
+  background-color: #e5e5ea;
   color: #000;
   align-self: flex-start;
-  display: flex; /* Use flexbox for alignment */
-  align-items: center; /* Vertically align items */
-  /* border: 1px solid #eee; */ /* Optional: remove or adjust border */
+  display: flex;
+  align-items: center;
 }
 
 .message-body {
@@ -703,8 +583,8 @@ h1 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  margin-right: 8px; /* Space between dot and message content */
-  flex-shrink: 0; /* Prevent dot from shrinking */
+  margin-right: 8px;
+  flex-shrink: 0;
 }
 
 .message-content {
@@ -750,36 +630,10 @@ h1 {
   transition: background-color 0.3s;
 }
 
-/* .input-area {
-
-  padding: 10px;
-  border-top: 1px solid #ccc;
-  background-color: #f1f1f1;
-}
-
-.input-area textarea {
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 20px;
-  margin-right: 10px;
-  width: 100%;
-}
-
-.input-area button {
-  padding: 10px 15px;
-  background-color: #4caf50;
-  color: white;
-  border: none;
-  border-radius: 20px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-} */
-
 .input-area button:hover {
   background-color: #45a049;
 }
 
-/* Style for loading indicator */
 .loading-indicator {
   text-align: center;
   padding: 10px;
@@ -787,22 +641,20 @@ h1 {
   font-style: italic;
 }
 
-/* Disable input/button when loading */
 .input-area input:disabled,
 .input-area button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }
 
-/* Styles for API Key Input Area */
 .api-key-area {
   padding: 10px;
-  border-top: 1px dashed #ccc; /* Dashed border to separate */
+  border-top: 1px dashed #ccc;
   background-color: #f9f9f9;
 }
 
 .api-key-warning {
-  color: #d9534f; /* Red warning color */
+  color: #d9534f;
   font-size: 0.9em;
   margin-bottom: 5px;
   text-align: center;
@@ -822,7 +674,7 @@ h1 {
 
 .api-key-input-group button {
   padding: 8px 12px;
-  background-color: #5bc0de; /* Info blue */
+  background-color: #5bc0de;
   color: white;
   border: none;
   border-radius: 4px;

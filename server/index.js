@@ -23,134 +23,6 @@ import cors from "cors";
 app.use(cors());
 app.use(express.json({ limit: "5mb" })); 
 
-app.get("/api", (req, res) => {
-  res.send("Hello Worlddd api");
-});
-
-const getMinimizedDOM = (rootElement) => {
-  if (!rootElement || typeof rootElement.cloneNode !== "function") {
-    console.error("Invalid rootElement", rootElement);
-    return "";
-  }
-  const clone = rootElement.cloneNode(true);
-  console.log("Cloned DOM:", clone);
-
-  // 1. remove script
-  clone.querySelectorAll("script").forEach((script) => script.remove());
-
-  // 2. find all elements with hidden / disabled attributes
-
-  const disabledOrHiddenElements = new Set();
-  const allElements = Array.from(clone.querySelectorAll("*"));
-
-  for (const el of allElements) {
-    const isHidden =
-      el.style.display === "none" ||
-      el.style.visibility === "hidden" ||
-      el.style.hidden === "true";
-
-    const isDisabled = el.style.disabled === "true";
-
-    if (isHidden || isDisabled) {
-      disabledOrHiddenElements.add(el);
-    }
-  }
-  // const disabledOrHiddenElements = new Set();
-  // const allElements = Array.from(clone.querySelectorAll("*"));
-
-  // for (const el of allElements) {
-  //   const isHidden =
-  //     el.hasAttribute("hidden") ||
-  //     el.getAttribute("aria-hidden") === "true" ||
-  //     el.style.display === "none" ||
-  //     el.style.visibility === "hidden";
-
-  //   const isDisabled =
-  //     el.hasAttribute("disabled") ||
-  //     el.getAttribute("aria-disabled") === "true";
-
-  //   if (isHidden || isDisabled) {
-  //     disabledOrHiddenElements.add(el);
-
-  //     el.querySelectorAll("*").forEach((child) => {
-  //       disabledOrHiddenElements.add(child);
-  //     });
-  //   }
-  // }
-
-  // 3. remove style tags
-  const styleTags = Array.from(clone.querySelectorAll("style"));
-
-  for (const styleTag of styleTags) {
-    let shouldKeep = false;
-
-    if (disabledOrHiddenElements.has(styleTag)) {
-      shouldKeep = true;
-    } else {
-      // check content of style tag
-      const styleContent = styleTag.textContent;
-
-      for (const el of disabledOrHiddenElements) {
-        if (
-          styleContent.includes("[disabled]") ||
-          styleContent.includes("[hidden]") ||
-          styleContent.includes('[aria-hidden="true"]')
-        ) {
-          shouldKeep = true;
-          break;
-        }
-      }
-    }
-
-    // remove style tag
-    if (!shouldKeep) {
-      styleTag.remove();
-    }
-  }
-
-  // 4. remove style, event handlers
-  for (const el of allElements) {
-    if (!disabledOrHiddenElements.has(el)) {
-      el.removeAttribute("style");
-    }
-    Array.from(el.attributes).forEach((attr) => {
-      if (attr.name.startsWith("on")) {
-        el.removeAttribute(attr.name);
-      }
-    });
-  }
-
-  const finalHTML = clone.outerHTML;
-  const finalDOM = html2pug(finalHTML, { tabs: true });
-
-  const bytes = new TextEncoder().encode(finalDOM).length;
-  const kb = bytes / 1024;
-  const mb = kb / 1024;
-
-  console.log(`DOM size: ${kb.toFixed(2)} KB (${mb.toFixed(2)} MB)`);
-
-  return finalDOM;
-};
-
-
-// const setupAI = (apiKey) => {
-//   const genAI = new GoogleGenerativeAI(apiKey);
-//   return genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
-//   //return genAI.getGenerativeModel({ model: "gemini-2.5-pro-preview-05-06" });
-// };
-
-// const setupAI = (apiKey) => {
-//   const genAI = new GoogleGenerativeAI(apiKey);
-//   return genAI.getGenerativeModel({
-//     model: "gemini-2.5-flash-preview-05-20",
-//     apiVersion: "v1beta",
-//   });
-// };
-
-
-app.get("/", (req, res) => {
-  res.send("Hello World");
-});
 
 app.post("/api/process-dom", async (req, res) => {
   const { dom, commandText, apiKey } = req.body;
@@ -162,9 +34,7 @@ app.post("/api/process-dom", async (req, res) => {
   }
 
   try {
-    //const minimizedDOM = getMinimizedDOM(dom);
     const minimizedDOM = html2pug(dom, { tabs: true });
-    //console.log("Minimized DOM:", minimizedDOM);
 
     const model = setupAI(apiKey);
     if (!model) {
@@ -220,10 +90,8 @@ ${minimizedDOM}
 ---
 JavaScript Code:`;
 
-    // call ai
     const chat = model.startChat();
     const result = await chat.sendMessage(prompt);
-    //const response = dom;
 
     const response = result.response;
 
@@ -241,7 +109,6 @@ JavaScript Code:`;
     try {
       const aiResponse = JSON.parse(aiResponseText);
 
-      // disabled validation
       if (aiResponse.selector && !aiResponse.error) {
         if (!aiResponse.selector.includes(":not([disabled])")) {
           aiResponse.selector =
@@ -272,7 +139,6 @@ JavaScript Code:`;
 
 
 app.post("/api/generate-cypress", async (req, res) => {
-  console.log("get cypress");
   const { dom, commandText, apiKey } = req.body;
 
   if (!dom || !commandText) {
@@ -283,12 +149,6 @@ app.post("/api/generate-cypress", async (req, res) => {
 
   const minimizedDOM = html2pug(dom, { tabs: true });
 
-  // const model = setupAI(apiKey);
-  // if (!model) {
-  //   return res.status(500).json({ error: "Failed to initialize Gemini AI" });
-  // }
-
-  // const chat = model.startChat();
   const commands = Array.isArray(commandText) ? commandText : [commandText];
   let combinedCode = "";
   const individualResults = [];
