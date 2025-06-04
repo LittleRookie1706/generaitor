@@ -3,12 +3,9 @@ import { ref, computed, watch, nextTick } from "vue";
 import { useDateFormat, useLocalStorage, useScroll } from "@vueuse/core";
 import { getMinimizedDOM } from "./utils/domUtils.js";
 
-import { isVisible } from "element-is-visible";
-
 const messagesAreaRef = ref(null);
 const { y } = useScroll(messagesAreaRef);
 
-// Reactive Gemini API Setup
 const apiKey = useLocalStorage("gemini-api-key", "");
 const apiKeyInput = ref("");
 
@@ -22,7 +19,6 @@ const showHideApiKeyInput = (key) => {
     showApiKeyInput.value = true;
   }
 };
-// Function to scroll messages area to bottom
 const scrollToBottom = () => {
   nextTick(() => {
     if (messagesAreaRef.value) {
@@ -31,7 +27,6 @@ const scrollToBottom = () => {
   });
 };
 
-// Initialize on component mount and watch for changes in stored key
 watch(
   apiKey,
   (newKey) => {
@@ -48,7 +43,6 @@ const saveApiKey = () => {
 
 const isApiKeySet = computed(() => !!apiKey.value);
 
-// Chatbox State and Messages
 const messages = useLocalStorage("chat-history", [
   {
     id: 1,
@@ -144,10 +138,8 @@ const sendMessage = async () => {
     }
 
     const data = await response.json();
-
     aiResponseText = data.aiResponse;
 
-    console.log("AI response json:", aiResponseText);
     } catch (apiError) {
       console.error("API error:", apiError);
       messages.value.push({
@@ -159,10 +151,10 @@ const sendMessage = async () => {
       });
     }
 
-    
-
     try {
-      const actionData = JSON.parse(aiResponseText);
+      //const actionData = JSON.parse(aiResponseText);
+
+      const actionData = aiResponseText;
 
       if (actionData.error) {
         messages.value.push({

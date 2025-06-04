@@ -23,23 +23,14 @@ export function getMinimizedDOM(rootElement) {
 
   allElementsInRoot.forEach((el) => {
     const visible = isVisible(el);
-    console.log("Check visible (from root):", el, "Visible:", visible, "index:", el.dataset._index);
     if (!visible) {
 
       hiddenIndexes.add(el.dataset._index);
     }
   });
 
-  
-
   allElementsInClone.forEach((el) => {
     if (hiddenIndexes.has(el.dataset._index)) {
-      console.log("index removed:", el.dataset._index,  "Removing hidden element in clone:", {
-        tag: el.tagName,
-        id: el.id || null,
-        class: el.className || null,
-        outerHTML: el.outerHTML.slice(0, 200) + "...",
-      });
       el.remove();
     }
   });
@@ -65,8 +56,6 @@ export function getMinimizedDOM(rootElement) {
   // const kb = bytes / 1024;
   // const mb = kb / 1024;
   // console.log(`Minimized DOM size: ${kb.toFixed(2)} KB (${mb.toFixed(2)} MB)`);
-
-  console.log("Minimized DOM:", finalHTML);
 
   return clone;
 }

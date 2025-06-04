@@ -471,3 +471,20 @@ DOM:
 Code: 
 cy.get('#patientSex').next().find('.select2-selection').click();
 cy.get('.select2-results__option').contains('Nam').click();
+
+
+
+Output Format:
+Return ONLY a single-line JSON object. Do NOT include any other text, explanations, or markdown.
+Structure:
+{
+  "selector": "<CSS selector string>",
+  "action": "<action name>",
+  "value": "<value string>", // Include for "type" or "select" actions
+  "isSelect2": true/false,   // Include for "select" actions
+  "optionValue": "<option value attribute>", // Include for "select" actions with Select2
+  "index": 0,  // Include when there are multiple matching elements (0-based index)
+  "positionHint": "next-to:selector" // Optional hint for relative positioning
+  "isEnabled": true,
+  "jsCode": "<A short, clean JavaScript snippet to execute the action>"
+}
