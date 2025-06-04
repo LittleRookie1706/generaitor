@@ -36,7 +36,11 @@ export const setupAIf = (apiKey) => {
 };
 
 export const setupAI = (apiKey) => {
-  return new GoogleGenAI({ apiKey });
+  const model =  new GoogleGenAI({ apiKey });
+  if(!model) {
+    return res.status(500).json({ error: "Failed to initialize Gemini AI" });
+  }
+  return model;
 };
 
 export const useAI = async (genAI, prompt) => {
