@@ -11,7 +11,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         // Define the content script as the entry point using import.meta.url
-        content: fileURLToPath(new URL('./src/content.js', import.meta.url))
+        index: fileURLToPath(new URL('./index.html', import.meta.url))
       },
       output: {
         // Ensure output filenames match manifest.json

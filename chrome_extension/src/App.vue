@@ -1,10 +1,12 @@
 <script setup>
 import { ref, computed, watch, nextTick } from "vue";
 import { useDateFormat, useLocalStorage, useScroll } from "@vueuse/core";
-import { getMinimizedDOM } from "./utils/domUtils.js";
 
 const messagesAreaRef = ref(null);
 const { y } = useScroll(messagesAreaRef);
+
+const API_URL_INTERACT = "http://localhost:3000/api/process-dom";
+const API_URL_GENERATE = "http://localhost:3000/api/generate-cypress";
 
 const apiKey = useLocalStorage("gemini-api-key", "");
 const apiKeyInput = ref("");
@@ -52,7 +54,6 @@ const messages = useLocalStorage("chat-history", [
   },
 ]);
 const newMessage = ref("");
-const isChatboxVisible = ref(false);
 const isLoading = ref(false);
 
 const formattedTimestamp = (ts) => {
@@ -92,8 +93,7 @@ const sendMessage = async () => {
     color: "gray",
   });
 
-  const API_URL_INTERACT = "http://localhost:3000/api/process-dom";
-
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   let aiResponseText; 
   for (const command of commands) {
     const loadingMessageId = Date.now();
@@ -115,7 +115,11 @@ const sendMessage = async () => {
       continue;
     }
 
-    const currentDOM = getMinimizedDOM(document.body);
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content.js']
+      });
+    let currentDOM = await chrome.tabs.sendMessage(tab.id, { action: "getDOM" });
     try {
       const response = await fetch(API_URL_INTERACT, {
         method: "POST",
@@ -151,195 +155,43 @@ const sendMessage = async () => {
       });
     }
 
-    try {
-      //const actionData = JSON.parse(aiResponseText);
 
-      const actionData = aiResponseText;
-
-      if (actionData.error) {
+    const actionData = aiResponseText;
+    if (actionData.error) {
         messages.value.push({
           id: Date.now() + 1,
           text: `AI Error: ${actionData.error}`,
           sender: "bot",
           timestamp: Date.now(),
         });
-      } else if (actionData.selector && actionData.action) {
-        // Query all matching elements
-        const allMatchingElements = document.querySelectorAll(
-          actionData.selector
-        );
-        let targetElement = null;
-
-        if (allMatchingElements.length === 0) {
-          messages.value.push({
-            id: Date.now() + 1,
-            text: `Error: No elements found for selector: ${actionData.selector}`,
-            sender: "bot",
-            timestamp: Date.now(),
-          });
-          continue;
-        }
-        // Handle multiple matching elements with index
-        else if (allMatchingElements.length > 1) {
-          if (
-            typeof actionData.index === "number" &&
-            actionData.index >= 0 &&
-            actionData.index < allMatchingElements.length
-          ) {
-            targetElement = allMatchingElements[actionData.index];
-          } else {
-            targetElement = allMatchingElements[0];
-          }
-        }
-        // Single element case
-        else {
-          targetElement = allMatchingElements[0];
-        }
-
-        if (!targetElement) {
-          messages.value.push({
-            id: Date.now() + 1,
-            text: `Error: Could not determine which element to interact with`,
-            sender: "bot",
-            timestamp: Date.now(),
-          });
-        } else {
-          let actionDescription = `${actionData.action} on ${actionData.selector}`;
-          if (typeof actionData.index === "number") {
-            actionDescription += ` (element #${actionData.index + 1})`;
-          }
-
-          switch (actionData.action.toLowerCase()) {
-            case "click":
-              targetElement.click();
-              break;
-
-            case "select":
-              if (targetElement instanceof HTMLSelectElement) {
-                let optionValue = null;
-
-                if (actionData.optionValue) {
-                  optionValue = actionData.optionValue;
-                }
-                else if (actionData.value) {
-                  const options = Array.from(targetElement.options);
-                  const matchingOption = options.find((option) =>
-                    option.textContent.trim().includes(actionData.value)
-                  );
-                  if (matchingOption) {
-                    optionValue = matchingOption.value;
-                  }
-                }
-
-                if (optionValue !== null) {
-                  targetElement.value = optionValue;
-                  actionDescription += ` with value "${optionValue}" (${
-                    actionData.value || ""
-                  })`;
-
-                  targetElement.dispatchEvent(
-                    new Event("change", { bubbles: true })
-                  );
-
-                  if (
-                    actionData.isSelect2 ||
-                    targetElement.classList.contains(
-                      "select2-hidden-accessible"
-                    )
-                  ) {
-                    if (
-                      window.jQuery &&
-                      window.jQuery(targetElement).data("select2")
-                    ) {
-                      window.jQuery(targetElement).trigger("change");
-                    }
-
-                    actionDescription += " (Select2 force approach)";
-                  }
-                } else {
-                  throw new Error(
-                    `Option "${actionData.value}" not found in select element.`
-                  );
-                }
-              } else {
-                throw new Error(`'select' action requires a SELECT element.`);
-              }
-              break;
-
-            case "type":
-              if (typeof actionData.value === "string") {
-                if (
-                  targetElement instanceof HTMLInputElement ||
-                  targetElement instanceof HTMLTextAreaElement
-                ) {
-                  targetElement.value = actionData.value;
-                  actionDescription += ` with value "${actionData.value}"`;
-                  targetElement.dispatchEvent(
-                    new Event("input", { bubbles: true })
-                  );
-                  targetElement.dispatchEvent(
-                    new Event("change", { bubbles: true })
-                  );
-                } else {
-                  throw new Error(
-                    `Element for 'type' is not an input or textarea.`
-                  );
-                }
-              } else {
-                throw new Error(`'type' action requires a 'value' string.`);
-              }
-              break;
-
-            case "focus":
-              targetElement.focus();
-              break;
-
-            case "submit":
-              if (targetElement instanceof HTMLFormElement) {
-                targetElement.submit();
-              } else if (targetElement.form) {
-                targetElement.form.submit();
-              } else {
-                throw new Error(
-                  `Cannot 'submit' element directly, and it's not part of a form.`
-                );
-              }
-              break;
-
-            default:
-              throw new Error(`Unsupported action: ${actionData.action}`);
-          }
-
-          messages.value.push({
-            id: Date.now() + 1,
-            text: `Executed: ${command}`,
-            sender: "bot",
-            timestamp: Date.now(),
-            color: "green",
-          });
-        }
-      } else {
-        throw new Error("Invalid JSON structure received from AI.");
-      }
-    } catch (parseOrExecError) {
-      messages.value.push({
-        id: Date.now() + 1,
-        text: `Execution Error: ${parseOrExecError.message}. AI Response: ${aiResponseText}`,
-        sender: "bot",
-        timestamp: Date.now(),
-        color: "red",
-      });
     }
+    else {
+      const res = await chrome.tabs.sendMessage(tab.id, { action: "DOMAction", aiResponseText});
+      if(res.error){
+        messages.value.push({
+          id: Date.now() + 1,
+          text: res.error,
+          sender: "bot",
+          timestamp: Date.now(),
+          color: "red",
+        });
+      }
+      else{
+        messages.value.push({
+          id: Date.now() + 1,
+          text: `Executed: ${command}`,
+          sender: "bot",
+          timestamp: Date.now(),
+          color: "green",
+        });
+      }
+    }
+
   }
-
   // ===========================
-
-  const API_URL = "http://localhost:3000/api/generate-cypress";
-
-  let data;
-  const currentDOM = getMinimizedDOM(document.body);
+  const currentDOM = await chrome.tabs.sendMessage(tab.id, { action: "getDOM" });
   try {
-    const response = await fetch(API_URL, {
+    const response = await fetch(API_URL_GENERATE, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -350,12 +202,11 @@ const sendMessage = async () => {
     });
 
     if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(`API Error: ${errorData.error || response.statusText}`);
-  }
-
-  data = await response.json();
-  aiResponseText = data.aiResponse;
+      const errorData = await response.json();
+      throw new Error(`API Error: ${errorData.error || response.statusText}`);
+    }
+    const data = await response.json();
+    aiResponseText = data.aiResponse;
 
   } catch (apiError) {
     messages.value.push({
@@ -386,31 +237,18 @@ const sendMessage = async () => {
   isLoading.value = false;
 };
 
-watch(isChatboxVisible, async (isVisible) => {
-  if (isVisible) {
-    await nextTick();
-    scrollToBottom();
-  }
-});
-
 watch(
-  messages,
+  () => messages.value.length,
   () => {
-    if (isChatboxVisible.value) {
-      scrollToBottom();
-    }
-  },
-  { deep: true }
-);
+    scrollToBottom()
+  }
+)
 </script>
 
 <template lang="pug">
-button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 💬
-
-.chatbox-container(v-if="isChatboxVisible")
+.chatbox-container
   .chatbox-header
     h1 Simple Chatbot
-    button.close-btn(@click="isChatboxVisible = false") &times;
 
   .chatbox-content
     .messages-area(ref="messagesAreaRef")
@@ -453,15 +291,14 @@ button.open-chat-btn(v-if="!isChatboxVisible" @click="isChatboxVisible = true") 
 <style scoped>
 .chatbox-container {
   position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 350px;
-  height: 500px;
-  max-height: 80vh;
+  bottom: 0;
+  right: 0;
+  width: 100%;
+  height: 100vh;
+  max-height: 100vh;
   display: flex;
   flex-direction: column;
   border: 1px solid #ccc;
-  border-radius: 8px;
   overflow: hidden;
   font-family: sans-serif;
   background-color: white;
