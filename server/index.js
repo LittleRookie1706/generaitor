@@ -1,10 +1,10 @@
 import express from "express";
 import html2pug from "html2pug";
-import { setupAI, useAI, useAI_genCypress } from "./utils/utils.js";
+import { setupAI, useAI, useAI_generateTest } from "./utils/utils.js";
 import { readFile } from "fs/promises";
 
 const app = express();
-const port = 3000;
+const port = 3456;
 
 import cors from "cors";
 
@@ -37,8 +37,8 @@ app.post("/api/process-dom", async (req, res) => {
     });
 });
 
-app.post("/api/generate-cypress", async (req, res) => {
-  const { dom, commandText, apiKey } = req.body;
+app.post("/api/generate-auto-test", async (req, res) => {
+  const { dom, commandText, apiKey, testType } = req.body;
 
   if (!dom || !commandText) {
     return res
@@ -51,7 +51,7 @@ app.post("/api/generate-cypress", async (req, res) => {
 
   const genAI = setupAI(apiKey);
   const promptTemplate = await readFile(
-    "./prompts/cypress-generate.txt",
+    `./prompts/${testType}-generate.txt`,
     "utf-8"
   );
 
@@ -61,7 +61,7 @@ app.post("/api/generate-cypress", async (req, res) => {
       .replace("${minimizedDOM}", minimizedDOM);
 
     try {
-      let result = await useAI_genCypress(genAI, prompt);
+      let result = await useAI_generateTest(genAI, prompt);
       if (result.startsWith("```")) {
         result = result
           .replace(/```.*?\n/, "")

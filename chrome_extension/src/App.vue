@@ -1,12 +1,13 @@
 <script setup>
 import { ref, computed, watch, nextTick } from "vue";
 import { useDateFormat, useLocalStorage, useScroll } from "@vueuse/core";
+import { v4 as uuidv4 } from 'uuid';
 
 const messagesAreaRef = ref(null);
 const { y } = useScroll(messagesAreaRef);
 
-const API_URL_INTERACT = "http://localhost:3000/api/process-dom";
-const API_URL_GENERATE = "http://localhost:3000/api/generate-cypress";
+const API_URL_INTERACT = "http://localhost:3456/api/process-dom";
+const API_URL_GENERATE = "http://localhost:3456/api/generate-auto-test";
 
 const apiKey = useLocalStorage("gemini-api-key", "");
 const apiKeyInput = ref("");
@@ -53,12 +54,146 @@ const messages = useLocalStorage("chat-history", [
     timestamp: Date.now() - 10000,
   },
 ]);
+
+const clearChat = () => {
+  messages.value = [];
+};
 const newMessage = ref("");
 const isLoading = ref(false);
+const testType = useLocalStorage("test-type", "cypress");
 
-const formattedTimestamp = (ts) => {
-  return useDateFormat(ts, "HH:mm").value;
-};
+
+function addMessageToChat(text, sender, color = undefined, customId = undefined, status = undefined) {
+  messages.value.push({
+    id: customId || uuidv4(),
+    text,
+    sender,
+    timestamp: Date.now(),
+    ...(color && { color }), // Add color only if provided
+    ...(status && { status }), // Add status only if provided
+  });
+}
+
+async function processCommandsAndGenerateTest(commandsToProcess, activeTab) {
+  // This function will handle processing individual commands and generating the Cypress test.
+  // It encapsulates the logic previously from lines 98-190 of sendMessage.
+
+  for (let i = 0; i < commandsToProcess.length; i++) {
+    const command = commandsToProcess[i];
+    let currentCommandAiResponseText; // Stores AI response for the current command's DOM interaction
+
+    // Find the corresponding user message and update its status to 'running'
+    const userMessageIndex = messages.value.findIndex(m => m.text === command && m.sender === 'user' && m.status === 'pending');
+    if (userMessageIndex > -1) {
+      messages.value[userMessageIndex].status = 'running';
+    }
+
+    if (command.toLowerCase().startsWith("check if")) {
+      addMessageToChat(`Command: ${command}`, "bot");
+      if (userMessageIndex > -1) {
+        messages.value[userMessageIndex].status = 'success'; // Mark as success if it's a check if command
+      }
+      continue;
+    }
+
+    await chrome.scripting.executeScript({
+      target: { tabId: activeTab.id },
+      files: ['content.js']
+    });
+    let currentCommandDOM = await chrome.tabs.sendMessage(activeTab.id, { action: "getDOM" });
+
+    try {
+      const response = await fetch(API_URL_INTERACT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          dom: currentCommandDOM.outerHTML,
+          commandText: command,
+          apiKey: apiKey.value,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`API Error: ${errorData.error || response.statusText}`);
+      }
+
+      const interactApiData = await response.json();
+      currentCommandAiResponseText = interactApiData.aiResponse;
+
+    } catch (apiError) {
+      console.error("API error:", apiError);
+      addMessageToChat(`Error processing command "${command}": ${apiError.message}`, "bot", "red");
+      if (userMessageIndex > -1) {
+        messages.value[userMessageIndex].status = 'failed'; // Mark as failed
+      }
+      return null; // Stop execution on API error
+    }
+
+    if (currentCommandAiResponseText) {
+      const actionData = currentCommandAiResponseText;
+      if (actionData.error) {
+        addMessageToChat(`AI Error for "${command}": ${actionData.error}`, "bot");
+        if (userMessageIndex > -1) {
+          messages.value[userMessageIndex].status = 'failed'; // Mark as failed
+        }
+        return null; // Stop execution on AI error
+      } else {
+        const res = await chrome.tabs.sendMessage(activeTab.id, { action: "DOMAction", aiResponseText: actionData });
+        if (res.error) {
+          addMessageToChat(`Execution error for "${command}": ${res.error}`, "bot", "red");
+          if (userMessageIndex > -1) {
+            messages.value[userMessageIndex].status = 'failed'; // Mark as failed
+          }
+          return null; // Stop execution on DOM action error
+        } else {
+          // addMessageToChat(`Executed: ${command}`, "bot", "green"); // Removed as per user request
+          if (userMessageIndex > -1) {
+            messages.value[userMessageIndex].status = 'success'; // Mark as success
+          }
+        }
+      }
+    } else {
+      // This case means currentCommandAiResponseText is undefined,
+      // likely due to an error in the try-catch block above.
+      // An error message should have already been pushed.
+      addMessageToChat(`No action performed for "${command}" due to prior error or no AI directive.`, "bot", "orange");
+      if (userMessageIndex > -1) {
+        messages.value[userMessageIndex].status = 'failed'; // Mark as failed
+      }
+      return null; // Stop execution if no AI directive
+    }
+  } // End of for loop for commands
+
+  // --- API_URL_GENERATE part ---
+  let generateApiResult = null;
+  try {
+    const domForGenerate = await chrome.tabs.sendMessage(activeTab.id, { action: "getDOM" });
+    const response = await fetch(API_URL_GENERATE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dom: domForGenerate.outerHTML,
+        commandText: commandsToProcess,
+        apiKey: apiKey.value,
+        testType: testType.value, // Pass the selected test type
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`API Error (Generate): ${errorData.error || response.statusText}`);
+    }
+    generateApiResult = await response.json();
+  } catch (apiError) {
+    console.error("API_URL_GENERATE error:", apiError);
+    addMessageToChat(`Error generating ${testType.value} test: ${apiError.message}`, "bot", "red");
+    // generateApiResult will remain null
+  }
+  return generateApiResult;
+}
 
 const sendMessage = async () => {
   const userText = newMessage.value.trim();
@@ -74,165 +209,33 @@ const sendMessage = async () => {
     return;
   }
 
-  messages.value.push({
-    id: Date.now(),
-    text: `Commands: ${userText}`,
-    sender: "user",
-    timestamp: Date.now(),
-  });
+  for (const command of commands) {
+    addMessageToChat(command, "user", undefined, Date.now(), 'pending'); // Add status 'pending'
+  }
 
   newMessage.value = "";
   isLoading.value = true;
 
-  const processingMessageId = Date.now();
-  messages.value.push({
-    id: processingMessageId,
-    text: "Start...",
-    sender: "bot",
-    timestamp: Date.now(),
-    color: "gray",
-  });
-
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  let aiResponseText; 
-  for (const command of commands) {
-    const loadingMessageId = Date.now();
-    messages.value.push({
-      id: loadingMessageId,
-      text: `On processing: "${command}"`,
-      sender: "bot",
-      timestamp: Date.now(),
-      color: "gray",
-    });
 
-    if (command.toLowerCase().startsWith("check if")) {
-      messages.value.push({
-        id: Date.now(),
-        text: `Command: ${command}`,
-        sender: "bot",
-        timestamp: Date.now(),
-      });
-      continue;
-    }
+  // Call the new helper function to process commands and generate the test
+  const generateData = await processCommandsAndGenerateTest(commands, tab);
 
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content.js']
-      });
-    let currentDOM = await chrome.tabs.sendMessage(tab.id, { action: "getDOM" });
-    try {
-      const response = await fetch(API_URL_INTERACT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dom: currentDOM.outerHTML,
-          commandText: command,
-          apiKey: apiKey.value,
-        }),
-      });
-
-      // Remove loading
-    messages.value.pop();
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API Error: ${errorData.error || response.statusText}`);
-    }
-
-    const data = await response.json();
-    aiResponseText = data.aiResponse;
-
-    } catch (apiError) {
-      console.error("API error:", apiError);
-      messages.value.push({
-        id: Date.now() + 1,
-        text: `Error: ${apiError.message}`,
-        sender: "bot",
-        timestamp: Date.now(),
-        color: "red",
-      });
-    }
-
-
-    const actionData = aiResponseText;
-    if (actionData.error) {
-        messages.value.push({
-          id: Date.now() + 1,
-          text: `AI Error: ${actionData.error}`,
-          sender: "bot",
-          timestamp: Date.now(),
-        });
-    }
-    else {
-      const res = await chrome.tabs.sendMessage(tab.id, { action: "DOMAction", aiResponseText});
-      if(res.error){
-        messages.value.push({
-          id: Date.now() + 1,
-          text: res.error,
-          sender: "bot",
-          timestamp: Date.now(),
-          color: "red",
-        });
-      }
-      else{
-        messages.value.push({
-          id: Date.now() + 1,
-          text: `Executed: ${command}`,
-          sender: "bot",
-          timestamp: Date.now(),
-          color: "green",
-        });
+  // Process the results from the test generation
+  if (generateData) {
+    if (generateData.individual && Array.isArray(generateData.individual)) {
+      for (const item of generateData.individual) {
+        if (item.error) {
+          addMessageToChat(`Command: ${item.command}\nError: ${item.error}`, "bot", "red");
+        }
       }
     }
 
-  }
-  // ===========================
-  const currentDOM = await chrome.tabs.sendMessage(tab.id, { action: "getDOM" });
-  try {
-    const response = await fetch(API_URL_GENERATE, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        dom: currentDOM.outerHTML,
-        commandText: commands,
-        apiKey: apiKey.value,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API Error: ${errorData.error || response.statusText}`);
-    }
-    const data = await response.json();
-    aiResponseText = data.aiResponse;
-
-  } catch (apiError) {
-    messages.value.push({
-      id: Date.now() + 1,
-      text: `Error: ${apiError.message}`,
-      sender: "bot",
-      timestamp: Date.now(),
-      color: "red",
-    });
-  }
-
-  for (const item of data.individual) {
-    if (item.error) {
-      messages.value.push({
-        text: `Command: ${item.command}\nError: ${item.error}`,
-        sender: "bot",
-        color: "red",
-      });
-    }
-  }
-
-  messages.value.push({
-    text: `Complete Cypress Test:\n${data.fullScript}`,
-    sender: "bot",
-    color: "green",
-  });
+    if (generateData.fullScript) {
+      addMessageToChat(`Complete ${testType.value} Test:\n${generateData.fullScript}`, "bot", "green");
+    } else if (!generateData.individual || generateData.individual.length === 0)
+      addMessageToChat(`${testType.value} test generation did not produce a script.`, "bot", "orange");
+  } else addMessageToChat(`Failed to generate ${testType.value} test due to an earlier error.`, "bot", "red");
 
   isLoading.value = false;
 };
@@ -252,8 +255,7 @@ watch(
 
   .chatbox-content
     .messages-area(ref="messagesAreaRef")
-      .loading-indicator Thinking...
-      .message(v-for="msg in messages" :key="msg.id" :class="['message-' + msg.sender]")
+      .message(v-for="msg in messages" :key="msg.id" :class="['message-' + msg.sender, msg.status ? 'message-' + msg.status : '']")
         
         .status-dot
           template(v-if="msg.text.startsWith('On processing') && msg.sender === 'bot'")
@@ -262,7 +264,6 @@ watch(
             .dot(:style="{ backgroundColor: msg.color || '#000' }")
         .message-body
           .message-content(:style="{ color: msg.color }") {{ msg.text }}
-          .timestamp {{ formattedTimestamp(msg.timestamp) }}
 
     .input-area
       textarea(
@@ -273,6 +274,17 @@ watch(
         rows="4"
       )
       .button-container
+        button.clear-btn(
+          @click="clearChat"
+          :disabled="isLoading"
+        ) Clear
+        .test-type-selection
+          label
+            input(type="radio" v-model="testType" value="cypress")
+            span Cypress
+          label
+            input(type="radio" v-model="testType" value="playwright")
+            span Playwright
         button(
           @click="sendMessage" 
           :disabled="isLoading || !isApiKeySet"
@@ -377,27 +389,43 @@ h1 {
   flex-direction: column;
   gap: 10px;
   background-color: #f9f9f9;
+  align-items: center; /* Center messages horizontally */
 }
 
 .message {
   padding: 8px 12px;
   border-radius: 15px;
-  max-width: 70%;
   word-wrap: break-word;
 }
 
 .message-user {
   background-color: #dcf8c6;
-  align-self: flex-end;
-  text-align: right;
+  margin: 0 auto; /* Center the message */
+  text-align: center; /* Center text within the message bubble */
+  max-width: 90%;
+  width: 90%;
+}
+
+.message-user.message-running {
+  background-color: orange;
+}
+
+.message-user.message-failed {
+  background-color: red;
+}
+
+.message-user.message-pending {
+  background-color: gray;
 }
 
 .message-bot {
   background-color: #e5e5ea;
   color: #000;
-  align-self: flex-start;
+  margin: 0 auto; /* Center the message */
   display: flex;
   align-items: center;
+  max-width: 90%;
+  width: 90%;
 }
 
 .message-body {
@@ -419,12 +447,9 @@ h1 {
 .message-content {
   margin-bottom: 3px;
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
-.timestamp {
-  font-size: 0.7em;
-  color: #888;
-}
 
 .input-area {
   padding: 10px;
@@ -446,7 +471,27 @@ h1 {
 .button-container {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
   width: 100%;
+}
+
+.test-type-selection {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-right: auto; /* Pushes the radio buttons to the left */
+}
+
+.test-type-selection label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 0.9em;
+  color: #555;
+}
+
+.test-type-selection input[type="radio"] {
+  margin-right: 5px;
 }
 
 .input-area button {
