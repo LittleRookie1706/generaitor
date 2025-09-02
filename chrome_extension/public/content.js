@@ -344,25 +344,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action !== "DOMAction") return true
+  request = request.response
+  if (request.action === "assert" && request.success)
+    {
+    sendResponse({status: 1})
+    return true
+    }
   try {
-    const actionData = request.aiResponseText;
+  if (request.action === "assert" && !request.success)
+              throw new Error(
+                "Assertion error"
+              );
 
-    if (!actionData.selector || !actionData.action) throw Error(`Error: Unexpected error`)
+    if (!request.selector || !request.action) throw Error(`Error: Unexpected error`)
     // Query all matching elements
     const allMatchingElements = document.querySelectorAll(
-      actionData.selector
+      request.selector
     );
     let targetElement = null;
 
-    if (allMatchingElements.length === 0) throw Error(`Error: No elements found for selector: ${actionData.selector}`)
+    if (allMatchingElements.length === 0) throw Error(`Error: No elements found for selector: ${request.selector}`)
     // Handle multiple matching elements with index
     else if (allMatchingElements.length > 1) {
       if (
-        typeof actionData.index === "number" &&
-        actionData.index >= 0 &&
-        actionData.index < allMatchingElements.length
+        typeof request.index === "number" &&
+        request.index >= 0 &&
+        request.index < allMatchingElements.length
       ) {
-        targetElement = allMatchingElements[actionData.index];
+        targetElement = allMatchingElements[request.index];
       } else {
         targetElement = allMatchingElements[0];
       }
@@ -375,12 +384,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (!targetElement) {
       throw Error(`Error: Could not determine which element to interact with`)
     } else {
-      let actionDescription = `${actionData.action} on ${actionData.selector}`;
-      if (typeof actionData.index === "number") {
-        actionDescription += ` (element #${actionData.index + 1})`;
+      let actionDescription = `${request.action} on ${request.selector}`;
+      if (typeof request.index === "number") {
+        actionDescription += ` (element #${request.index + 1})`;
       }
 
-      switch (actionData.action.toLowerCase()) {
+      switch (request.action.toLowerCase()) {
         case "click":
           targetElement.click();
           break;
@@ -389,13 +398,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           if (targetElement instanceof HTMLSelectElement) {
             let optionValue = null;
 
-            if (actionData.optionValue) {
-              optionValue = actionData.optionValue;
+            if (request.optionValue) {
+              optionValue = request.optionValue;
             }
-            else if (actionData.value) {
+            else if (request.value) {
               const options = Array.from(targetElement.options);
               const matchingOption = options.find((option) =>
-                option.textContent.trim().includes(actionData.value)
+                option.textContent.trim().includes(request.value)
               );
               if (matchingOption) {
                 optionValue = matchingOption.value;
@@ -405,7 +414,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (optionValue !== null) {
               targetElement.value = optionValue;
               actionDescription += ` with value "${optionValue}" (${
-                actionData.value || ""
+                request.value || ""
               })`;
 
               targetElement.dispatchEvent(
@@ -413,7 +422,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               );
 
               if (
-                actionData.isSelect2 ||
+                request.isSelect2 ||
                 targetElement.classList.contains(
                   "select2-hidden-accessible"
                 )
@@ -429,7 +438,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               }
             } else {
               throw new Error(
-                `Option "${actionData.value}" not found in select element.`
+                `Option "${request.value}" not found in select element.`
               );
             }
           } else {
@@ -438,13 +447,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           break;
 
         case "type":
-          if (typeof actionData.value === "string") {
+          if (typeof request.value === "string") {
             if (
               targetElement instanceof HTMLInputElement ||
               targetElement instanceof HTMLTextAreaElement
             ) {
-              targetElement.value = actionData.value;
-              actionDescription += ` with value "${actionData.value}"`;
+              targetElement.value = request.value;
+              actionDescription += ` with value "${request.value}"`;
               targetElement.dispatchEvent(
                 new Event("input", { bubbles: true })
               );
@@ -478,7 +487,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           break;
 
         default:
-          throw new Error(`Unsupported action: ${actionData.action}`);
+          throw new Error(`Unsupported action: ${request.action}`);
       }
     }
   } catch (parseOrExecError) {

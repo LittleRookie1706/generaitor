@@ -31,10 +31,8 @@ app.post("/api/process-dom", async (req, res) => {
       .replace("${minimizedDOM}", minimizedDOM);
 
     const data = await useAI(genAI, prompt);
-    res.json({
-      success: true,
-      aiResponse: data,
-    });
+
+    return res.json(data)
 });
 
 app.post("/api/generate-auto-test", async (req, res) => {
@@ -91,64 +89,6 @@ app.post("/api/generate-auto-test", async (req, res) => {
     fullScript: combinedCode.trim(),
   });
 });
-
-
-// app.post("/api/generate-cypress", async (req, res) => {
-//   const { dom, commandText, apiKey } = req.body;
-
-//   if (!dom || !commandText) {
-//     return res
-//       .status(422)
-//       .json({ error: "DOM content and command are required" });
-//   }
-
-//   const minimizedDOM = html2pug(dom, { tabs: true });
-
-//   const commands = Array.isArray(commandText) ? commandText : [commandText];
-//   let combinedCode = "";
-//   const individualResults = [];
-
-//   for (const command of commands) {
-//     const genAI = setupAI(apiKey);
-//     const promptTemplate = await readFile(
-//       "./prompts/cypress-generate.txt",
-//       "utf-8"
-//     );
-
-//     const prompt = promptTemplate
-//       .replace("${command}", commandText)
-//       .replace("${minimizedDOM}", minimizedDOM);
-
-//     try {
-//       const result = await useAI_genCypress(genAI, prompt);
-//       let text = result;
-
-//       if (text.startsWith("```")) {
-//         text = text
-//           .replace(/```.*?\n/, "")
-//           .replace(/\n```/, "")
-//           .trim();
-//       }
-
-//       if (!text.endsWith(";")) {
-//         text += ";";
-//       }
-
-//       combinedCode += text + "\n";
-//       individualResults.push({ command, code: text });
-//     } catch (err) {
-//       console.error("AI error:", err);
-//       individualResults.push({ command, error: err.message });
-//       combinedCode += `// Error for "${command}": ${err.message}\n`;
-//     }
-//   }
-
-//   res.json({
-//     success: true,
-//     individual: individualResults,
-//     fullScript: combinedCode.trim(),
-//   });
-// });
 
 app.listen(port, () => {
   console.log(`Server is running at http://localhost:${port}`);

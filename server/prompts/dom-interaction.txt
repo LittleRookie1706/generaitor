@@ -1,34 +1,43 @@
 Your task is to act as a DOM interaction planner. Analyze the user command and the provided DOM structure. Identify the target element and the intended action.
 
-Instructions:
+Instructions for assert:
+1. If the command is not interact, only assert. The assert should be strict.
+Example:
+- The "save" button should be visible
+- The alert should contain "This is example text"
+IMPORTANT: DO NOT allow any charactor/atrribute wrong from requirements.
+Example: 
+   -  expect: the alert contain "[Legal name] Vietnamese Merchant"
+      actual: the alert contain "[Legal name] Vietnamese Merchant", 
+      return: {"success": true, "action": "assert"}
+   -  expect: the alert contain "[Legal name] Vietnamese Merchant"
+      actual: the alert contain "[Legal name] Vietnamese Mechant", 
+      return: {"success": false, "action": "assert", "detail": "The alert contain "[Legal name] Vietnamese Mechant" instead"}
+
+Instructions for action:
 1. Find the target element based on the Command and DOM.
-2. Determine the best CSS selector using this priority: id > data-testid > class > tag+attributes.
-3. Identify the action: "click", "type", "focus", "submit", "select", ...
-4. For "select" action, determine if it's a regular select or Select2 dropdown (has class "select2-hidden-accessible").
-5. For Select2, identify the option value from the DOM (not just the display text).
-6. For "type" or "select" action, extract the value from the Command.
-7. IMPORTANT: If the Command specifies a particular element among many similar ones (e.g., "the second button", "the last checkbox", "the button next to the user icon"), determine the correct index or relative position.
-8. CRITICAL: NEVER select disabled elements. Check for all possible indicators of disabled state:
+2. Identify the action: "click", "type", "focus", "submit", "select", ...
+3. For "type" or "select" action, extract the value from the Command.
+4. IMPORTANT: If the Command specifies a particular element among many similar ones (e.g., "the second button", "the last checkbox", "the button next to the user icon"), determine the correct index or relative position.
+5. CRITICAL: NEVER select disabled elements. Check for all possible indicators of disabled state:
    - Elements with attribute 'disabled'
    - Elements with attribute 'aria-disabled="true"'
-
    - Parent elements that might contain the above attributes/classes
-9. If multiple elements match your selector, but some are disabled, only consider the enabled ones for indexing.
-10. Generate a JavaScript code snippet (string) that performs the action safely with target element.
+6. If multiple elements match your selector, but some are disabled, only consider the enabled ones for indexing.
+7. Generate a JavaScript code snippet (string) that performs the action safely with target element.
 
+Example:
+   - Return for clicking a button: {"selector": "button.primary", "action": "click"}
+   - Return for clicking a button(multipe buttons): {"selector": "button.primary", "action": "click", "index": 1}
+   - Return for selecting an option: {"selector": "[data-testid='province']", "action": "select", "value": "someCity", "optionValue": "89"}
 
-Example for clicking a specific button: {"selector": "button.primary", "action": "click", "index": 1}
-Example for clicking based on position: {"selector": "button.primary", "action": "click", "positionHint": "next-to:.user-icon"}
-Example for selecting an option: {"selector": "[data-testid='booking-province-droplist']", "action": "select", "value": "Tỉnh An Giang", "isSelect2": true, "optionValue": "89"}
-
-If the command is ambiguous or the element/action cannot be determined, return JSON: {"error": "Cannot determine action or selector."}
+If the command is ambiguous or the element/action cannot be determined, return JSON: {"success": false, "detail": "Cannot determine action/expectation"}
 
 ---
 Command: ${commandText}
 ---
 DOM:
-\`\`\`html
+\`\`\`html/pug
 ${minimizedDOM}
 \`\`\`
 ---
-JavaScript Code:

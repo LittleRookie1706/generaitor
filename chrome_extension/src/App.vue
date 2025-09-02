@@ -1,88 +1,165 @@
 <script setup>
-import { ref, computed, watch, nextTick } from "vue";
-import { useDateFormat, useLocalStorage, useScroll } from "@vueuse/core";
+import { ref, computed, watch } from "vue";
+import { useLocalStorage } from "@vueuse/core";
 import { v4 as uuidv4 } from 'uuid';
 
-const messagesAreaRef = ref(null);
-const { y } = useScroll(messagesAreaRef);
+import Chat from "./views/Chat.vue";
+import History from "./views/History.vue";
+import Settings from "./views/Settings.vue";
 
 const API_URL_INTERACT = "http://localhost:3456/api/process-dom";
 const API_URL_GENERATE = "http://localhost:3456/api/generate-auto-test";
 
 const apiKey = useLocalStorage("gemini-api-key", "");
-const apiKeyInput = ref("");
+const showConfig = ref(false);
+const showHistory = ref(false);
 
 const showApiKeyInput = ref(!apiKey.value);
-
-const showHideApiKeyInput = (key) => {
-  if (key) {
-    showApiKeyInput.value = false;
-  } else {
-    console.log("Gemini client requires an API key.");
-    showApiKeyInput.value = true;
-  }
-};
-const scrollToBottom = () => {
-  nextTick(() => {
-    if (messagesAreaRef.value) {
-      y.value = messagesAreaRef.value.scrollHeight;
-    }
-  });
-};
 
 watch(
   apiKey,
   (newKey) => {
-    showHideApiKeyInput(newKey);
+    if (newKey) {
+      showApiKeyInput.value = false;
+    } else {
+      console.log("Gemini client requires an API key.");
+      showApiKeyInput.value = true;
+    }
   },
   { immediate: true }
 );
 
-const saveApiKey = () => {
-  apiKey.value = apiKeyInput.value;
-  apiKeyInput.value = "";
-  alert("API Key saved!");
-};
-
 const isApiKeySet = computed(() => !!apiKey.value);
 
-const messages = useLocalStorage("chat-history", [
-  {
-    id: 1,
-    text: "Hello! Ask me anything.",
-    sender: "bot",
-    timestamp: Date.now() - 10000,
-  },
-]);
-
-const clearChat = () => {
-  messages.value = [];
-};
-const newMessage = ref("");
+const channels = useLocalStorage("chat-channels", {});
+const currentChannelId = useLocalStorage("current-chat-channel-id", null);
 const isLoading = ref(false);
 const testType = useLocalStorage("test-type", "cypress");
 
-
-function addMessageToChat(text, sender, color = undefined, customId = undefined, status = undefined) {
-  messages.value.push({
-    id: customId || uuidv4(),
-    text,
-    sender,
-    timestamp: Date.now(),
-    ...(color && { color }), // Add color only if provided
-    ...(status && { status }), // Add status only if provided
+const createNewChannel = () => {
+  const emptyChannelId = Object.keys(channels.value).find(id => {
+    const channel = channels.value[id];
+    return channel.messages.length === 1 && channel.messages[0].text === "Hello! Ask me anything.";
   });
+
+  if (emptyChannelId) {
+    currentChannelId.value = emptyChannelId;
+  } else {
+    const newId = uuidv4();
+    channels.value[newId] = {
+      messages: [{
+        id: uuidv4(),
+        text: "Hello! Ask me anything.",
+        sender: "bot",
+        timestamp: Date.now(),
+      }],
+    };
+    currentChannelId.value = newId;
+  }
+  showHistory.value = false;
+};
+
+const switchChannel = (channelId) => {
+  currentChannelId.value = channelId;
+  showHistory.value = false;
+};
+
+const deleteChannel = (channelIdToDelete) => {
+  if (Object.keys(channels.value).length === 1) {
+    alert("Cannot delete the last channel.");
+    return;
+  }
+
+  const newChannels = { ...channels.value };
+  delete newChannels[channelIdToDelete];
+  channels.value = newChannels;
+
+  if (currentChannelId.value === channelIdToDelete) {
+    currentChannelId.value = Object.keys(channels.value)[0];
+  }
+};
+
+if (Object.keys(channels.value).length === 0) {
+  createNewChannel();
 }
 
-async function processCommandsAndGenerateTest(commandsToProcess, activeTab) {
-  // This function will handle processing individual commands and generating the Cypress test.
-  // It encapsulates the logic previously from lines 98-190 of sendMessage.
+watch(channels, (newChannels) => {
+  if (!currentChannelId.value || !newChannels[currentChannelId.value]) {
+    const firstChannelId = Object.keys(newChannels)[0];
+    if (firstChannelId) {
+      currentChannelId.value = firstChannelId;
+    }
+  }
+}, { immediate: true });
 
+const messages = computed(() => {
+  if (currentChannelId.value && channels.value[currentChannelId.value]) {
+    return channels.value[currentChannelId.value].messages;
+  }
+  return [];
+});
+
+const addMessageToChat = (text, sender, color = undefined, customId = undefined, status = undefined) => {
+  if (currentChannelId.value && channels.value[currentChannelId.value]) {
+    channels.value[currentChannelId.value].messages.push({
+      id: customId || uuidv4(),
+      text,
+      sender,
+      timestamp: Date.now(),
+      ...(color && { color }),
+      ...(status && { status }),
+    });
+  }
+};
+
+const clearChat = () => {
+  if (currentChannelId.value && channels.value[currentChannelId.value]) {
+    channels.value[currentChannelId.value].messages = [];
+  }
+};
+
+const handleSendMessage = async (userText) => {
+  const commands = userText
+    .split("\n")
+    .map((cmd) => cmd.trim())
+    .filter((cmd) => cmd !== "");
+  if (commands.length === 0) {
+    return;
+  }
+
+  for (const command of commands) {
+    addMessageToChat(command, "user", undefined, Date.now(), 'pending');
+  }
+
+  isLoading.value = true;
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  const generateData = await processCommandsAndGenerateTest(commands, tab);
+
+  if (generateData) {
+    if (generateData.individual && Array.isArray(generateData.individual)) {
+      for (const item of generateData.individual) {
+        if (item.error) {
+          addMessageToChat(`Command: ${item.command}\nError: ${item.error}`, "bot", "red");
+        }
+      }
+    }
+
+    if (generateData.fullScript) {
+      addMessageToChat(`Complete ${testType.value} Test:\n${generateData.fullScript}`, "bot", "green");
+    } else if (!generateData.individual || generateData.individual.length === 0)
+      addMessageToChat(`${testType.value} test generation did not produce a script.`, "bot", "orange");
+  } else addMessageToChat(`Failed to generate ${testType.value} test due to an earlier error.`, "bot", "red");
+
+  isLoading.value = false;
+};
+
+async function processCommandsAndGenerateTest(commandsToProcess, activeTab) {
   for (let i = 0; i < commandsToProcess.length; i++) {
     const command = commandsToProcess[i];
-    let currentCommandAiResponseText; // Stores AI response for the current command's DOM interaction
+    let currentCommandAiResponse;
 
-    // Find the corresponding user message and update its status to 'running'
     const userMessageIndex = messages.value.findIndex(m => m.text === command && m.sender === 'user' && m.status === 'pending');
     if (userMessageIndex > -1) {
       messages.value[userMessageIndex].status = 'running';
@@ -91,7 +168,7 @@ async function processCommandsAndGenerateTest(commandsToProcess, activeTab) {
     if (command.toLowerCase().startsWith("check if")) {
       addMessageToChat(`Command: ${command}`, "bot");
       if (userMessageIndex > -1) {
-        messages.value[userMessageIndex].status = 'success'; // Mark as success if it's a check if command
+        messages.value[userMessageIndex].status = 'success';
       }
       continue;
     }
@@ -101,7 +178,6 @@ async function processCommandsAndGenerateTest(commandsToProcess, activeTab) {
       files: ['content.js']
     });
     let currentCommandDOM = await chrome.tabs.sendMessage(activeTab.id, { action: "getDOM" });
-
     try {
       const response = await fetch(API_URL_INTERACT, {
         method: "POST",
@@ -121,53 +197,56 @@ async function processCommandsAndGenerateTest(commandsToProcess, activeTab) {
       }
 
       const interactApiData = await response.json();
-      currentCommandAiResponseText = interactApiData.aiResponse;
+      currentCommandAiResponse = interactApiData;
 
     } catch (apiError) {
       console.error("API error:", apiError);
       addMessageToChat(`Error processing command "${command}": ${apiError.message}`, "bot", "red");
       if (userMessageIndex > -1) {
-        messages.value[userMessageIndex].status = 'failed'; // Mark as failed
+        messages.value[userMessageIndex].status = 'failed';
       }
-      return null; // Stop execution on API error
+      return null;
     }
 
-    if (currentCommandAiResponseText) {
-      const actionData = currentCommandAiResponseText;
+    if (currentCommandAiResponse.action === 'assert') {
+      if(currentCommandAiResponse.success === true){
+        messages.value[userMessageIndex].status = 'success';
+      }
+      else{
+        messages.value[userMessageIndex].status = 'failed';
+      }
+    }
+    else if (currentCommandAiResponse) {
+      const actionData = currentCommandAiResponse;
       if (actionData.error) {
         addMessageToChat(`AI Error for "${command}": ${actionData.error}`, "bot");
         if (userMessageIndex > -1) {
-          messages.value[userMessageIndex].status = 'failed'; // Mark as failed
+          messages.value[userMessageIndex].status = 'failed';
         }
-        return null; // Stop execution on AI error
+        return null;
       } else {
-        const res = await chrome.tabs.sendMessage(activeTab.id, { action: "DOMAction", aiResponseText: actionData });
+        const res = await chrome.tabs.sendMessage(activeTab.id, { action: "DOMAction", response: actionData });
         if (res.error) {
           addMessageToChat(`Execution error for "${command}": ${res.error}`, "bot", "red");
           if (userMessageIndex > -1) {
-            messages.value[userMessageIndex].status = 'failed'; // Mark as failed
+            messages.value[userMessageIndex].status = 'failed';
           }
-          return null; // Stop execution on DOM action error
+          return null;
         } else {
-          // addMessageToChat(`Executed: ${command}`, "bot", "green"); // Removed as per user request
           if (userMessageIndex > -1) {
-            messages.value[userMessageIndex].status = 'success'; // Mark as success
+            messages.value[userMessageIndex].status = 'success';
           }
         }
       }
     } else {
-      // This case means currentCommandAiResponseText is undefined,
-      // likely due to an error in the try-catch block above.
-      // An error message should have already been pushed.
       addMessageToChat(`No action performed for "${command}" due to prior error or no AI directive.`, "bot", "orange");
       if (userMessageIndex > -1) {
-        messages.value[userMessageIndex].status = 'failed'; // Mark as failed
+        messages.value[userMessageIndex].status = 'failed';
       }
-      return null; // Stop execution if no AI directive
+      return null;
     }
-  } // End of for loop for commands
+  }
 
-  // --- API_URL_GENERATE part ---
   let generateApiResult = null;
   try {
     const domForGenerate = await chrome.tabs.sendMessage(activeTab.id, { action: "getDOM" });
@@ -178,7 +257,7 @@ async function processCommandsAndGenerateTest(commandsToProcess, activeTab) {
         dom: domForGenerate.outerHTML,
         commandText: commandsToProcess,
         apiKey: apiKey.value,
-        testType: testType.value, // Pass the selected test type
+        testType: testType.value,
       }),
     });
 
@@ -190,114 +269,53 @@ async function processCommandsAndGenerateTest(commandsToProcess, activeTab) {
   } catch (apiError) {
     console.error("API_URL_GENERATE error:", apiError);
     addMessageToChat(`Error generating ${testType.value} test: ${apiError.message}`, "bot", "red");
-    // generateApiResult will remain null
   }
   return generateApiResult;
 }
-
-const sendMessage = async () => {
-  const userText = newMessage.value.trim();
-  if (userText === "" || isLoading.value) {
-    return;
-  }
-
-  const commands = userText
-    .split("\n")
-    .map((cmd) => cmd.trim())
-    .filter((cmd) => cmd !== "");
-  if (commands.length === 0) {
-    return;
-  }
-
-  for (const command of commands) {
-    addMessageToChat(command, "user", undefined, Date.now(), 'pending'); // Add status 'pending'
-  }
-
-  newMessage.value = "";
-  isLoading.value = true;
-
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-  // Call the new helper function to process commands and generate the test
-  const generateData = await processCommandsAndGenerateTest(commands, tab);
-
-  // Process the results from the test generation
-  if (generateData) {
-    if (generateData.individual && Array.isArray(generateData.individual)) {
-      for (const item of generateData.individual) {
-        if (item.error) {
-          addMessageToChat(`Command: ${item.command}\nError: ${item.error}`, "bot", "red");
-        }
-      }
-    }
-
-    if (generateData.fullScript) {
-      addMessageToChat(`Complete ${testType.value} Test:\n${generateData.fullScript}`, "bot", "green");
-    } else if (!generateData.individual || generateData.individual.length === 0)
-      addMessageToChat(`${testType.value} test generation did not produce a script.`, "bot", "orange");
-  } else addMessageToChat(`Failed to generate ${testType.value} test due to an earlier error.`, "bot", "red");
-
-  isLoading.value = false;
-};
-
-watch(
-  () => messages.value.length,
-  () => {
-    scrollToBottom()
-  }
-)
 </script>
 
 <template lang="pug">
 .chatbox-container
   .chatbox-header
-    h1 Simple Chatbot
+    .header-icons
+      button.new-chat-icon-btn(@click="createNewChannel")
+        svg(xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24px" height="24px")
+          path(d="M0 0h24v24H0z" fill="none")
+          path(d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z")
+      button.history-icon-btn(@click="showHistory = !showHistory")
+        svg(xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24px" height="24px")
+          path(d="M0 0h24v24H0z" fill="none")
+          path(d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.51 0-2.91-.49-4.06-1.3l-1.42 1.42C9.17 21.23 10.9 22 13 22c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z")
+      button.config-icon-btn(@click="showConfig = !showConfig")
+        svg(xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24px" height="24px")
+          path(d="M0 0h24v24H0z" fill="none")
+          path(d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.09-.73-1.7-.98l-.35-2.5c-.05-.24-.24-.41-.48-.41h-4c-.24 0-.43.17-.48.41l-.35 2.5c-.61.25-1.18.58-1.7.98l-2.49-1c-.22-.09-.49 0-.61.22l-2 3.46c-.12.22-.07.49.12.64l2.11 1.65c-.04.32-.07.64-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.09.73 1.7.98l.35 2.5c.05.24.24.41.48.41h4c.24 0 .43-.17.48-.41l.35-2.5c.61-.25 1.18-.58 1.7-.98l2.49 1c.22.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z")
 
-  .chatbox-content
-    .messages-area(ref="messagesAreaRef")
-      .message(v-for="msg in messages" :key="msg.id" :class="['message-' + msg.sender, msg.status ? 'message-' + msg.status : '']")
-        
-        .status-dot
-          template(v-if="msg.text.startsWith('On processing') && msg.sender === 'bot'")
-            .spinner
-          template(v-else)
-            .dot(:style="{ backgroundColor: msg.color || '#000' }")
-        .message-body
-          .message-content(:style="{ color: msg.color }") {{ msg.text }}
-
-    .input-area
-      textarea(
-        v-model="newMessage" 
-        @keydown.enter.exact.prevent="sendMessage" 
-        :disabled="isLoading || !isApiKeySet" 
-        placeholder="Type your message..." 
-        rows="4"
-      )
-      .button-container
-        button.clear-btn(
-          @click="clearChat"
-          :disabled="isLoading"
-        ) Clear
-        .test-type-selection
-          label
-            input(type="radio" v-model="testType" value="cypress")
-            span Cypress
-          label
-            input(type="radio" v-model="testType" value="playwright")
-            span Playwright
-        button(
-          @click="sendMessage" 
-          :disabled="isLoading || !isApiKeySet"
-        ) Send
-    
-
-
-    .api-key-area(v-if="showApiKeyInput")
-      p(v-if="!isApiKeySet" class="api-key-warning") Please set your Gemini API Key below to enable chat.
-      div.api-key-input-group
-        input(type="password" v-model="apiKeyInput" placeholder="Enter Gemini API Key" @keyup.enter="saveApiKey")
-        button(@click="saveApiKey") Save Key
-
+  Chat(
+    v-if="!showHistory && !showConfig"
+    :messages="messages"
+    :isLoading="isLoading"
+    :isApiKeySet="isApiKeySet"
+    :testType="testType"
+    @send-message="handleSendMessage"
+    @clear-chat="clearChat"
+    @update:testType="testType = $event"
+  )
+  History(
+    v-if="showHistory"
+    :channels="channels"
+    :currentChannelId="currentChannelId"
+    @switch-channel="switchChannel"
+    @delete-channel="deleteChannel"
+    @close-history="showHistory = false"
+  )
+  Settings(
+    v-if="showConfig"
+    :apiKey="apiKey"
+    :isApiKeySet="isApiKeySet"
+    @update:apiKey="apiKey = $event"
+    @close-config="showConfig = false"
+  )
 </template>
 
 <style scoped>
@@ -344,7 +362,7 @@ watch(
 
 .chatbox-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end; /* Align items to the right */
   align-items: center;
   padding: 0 10px;
   background-color: #f1f1f1;
@@ -352,12 +370,30 @@ watch(
   min-height: 40px;
 }
 
-h1 {
-  padding: 10px 0;
-  margin: 0;
-  font-size: 1.1em;
-  flex-grow: 1;
-  text-align: center;
+.header-icons {
+  display: flex;
+  gap: 5px; /* Space between icons */
+}
+
+.config-icon-btn,
+.new-chat-icon-btn,
+.history-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: #555; /* Adjust color as needed */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px; /* Make it clickable */
+  height: 40px; /* Make it clickable */
+}
+
+.config-icon-btn:hover,
+.new-chat-icon-btn:hover,
+.history-icon-btn:hover {
+  color: #000;
 }
 
 .close-btn,
@@ -374,188 +410,4 @@ h1 {
   color: #000;
 }
 
-.chatbox-content {
-  display: flex;
-  flex-direction: column;
-  flex-grow: 1;
-  overflow: hidden;
-}
-
-.messages-area {
-  flex-grow: 1;
-  padding: 15px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background-color: #f9f9f9;
-  align-items: center; /* Center messages horizontally */
-}
-
-.message {
-  padding: 8px 12px;
-  border-radius: 15px;
-  word-wrap: break-word;
-}
-
-.message-user {
-  background-color: #dcf8c6;
-  margin: 0 auto; /* Center the message */
-  text-align: center; /* Center text within the message bubble */
-  max-width: 90%;
-  width: 90%;
-}
-
-.message-user.message-running {
-  background-color: orange;
-}
-
-.message-user.message-failed {
-  background-color: red;
-}
-
-.message-user.message-pending {
-  background-color: gray;
-}
-
-.message-bot {
-  background-color: #e5e5ea;
-  color: #000;
-  margin: 0 auto; /* Center the message */
-  display: flex;
-  align-items: center;
-  max-width: 90%;
-  width: 90%;
-}
-
-.message-body {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  flex: 1;
-  min-width: 0;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 8px;
-  flex-shrink: 0;
-}
-
-.message-content {
-  margin-bottom: 3px;
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-
-
-.input-area {
-  padding: 10px;
-  border-top: 1px solid #ccc;
-  background-color: #f1f1f1;
-  display: flex;
-  flex-direction: column;
-}
-
-.input-area textarea {
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 20px;
-  width: 100%;
-  margin-bottom: 10px;
-  resize: vertical;
-}
-
-.button-container {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  width: 100%;
-}
-
-.test-type-selection {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-right: auto; /* Pushes the radio buttons to the left */
-}
-
-.test-type-selection label {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  font-size: 0.9em;
-  color: #555;
-}
-
-.test-type-selection input[type="radio"] {
-  margin-right: 5px;
-}
-
-.input-area button {
-  padding: 10px 15px;
-  background-color: #4caf50;
-  color: white;
-  border: none;
-  border-radius: 20px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.input-area button:hover {
-  background-color: #45a049;
-}
-
-.loading-indicator {
-  text-align: center;
-  padding: 10px;
-  color: #888;
-  font-style: italic;
-}
-
-.input-area input:disabled,
-.input-area button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.api-key-area {
-  padding: 10px;
-  border-top: 1px dashed #ccc;
-  background-color: #f9f9f9;
-}
-
-.api-key-warning {
-  color: #d9534f;
-  font-size: 0.9em;
-  margin-bottom: 5px;
-  text-align: center;
-}
-
-.api-key-input-group {
-  display: flex;
-  gap: 10px;
-}
-
-.api-key-input-group input {
-  flex-grow: 1;
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.api-key-input-group button {
-  padding: 8px 12px;
-  background-color: #5bc0de;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-.api-key-input-group button:hover {
-  background-color: #31b0d5;
-}
 </style>

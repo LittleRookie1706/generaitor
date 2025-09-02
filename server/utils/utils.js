@@ -12,17 +12,14 @@ export const useAI = async (genAI, prompt) => {
   const schema = {
     type: Type.OBJECT,
     properties: {
+      success: { type: Type.BOOLEAN },
       selector: { type: Type.STRING },
       action: { type: Type.STRING },
       value: { type: Type.STRING },
-      isSelect2: { type: Type.BOOLEAN },
       optionValue: { type: Type.STRING },
       index: { type: Type.INTEGER },
-      positionHint: { type: Type.STRING },
-      isEnabled: { type: Type.BOOLEAN },
-      jsCode: { type: Type.STRING },
     },
-    required: ["selector", "action", "isEnabled", "jsCode"],
+    required: ["success", "selector", "action"],
   };
 
   const result = await genAI.models.generateContent({
