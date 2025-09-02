@@ -156,11 +156,12 @@ const handleSendMessage = async (userText) => {
 };
 
 async function processCommandsAndGenerateTest(commandsToProcess, activeTab) {
+  const MAX_SEQUENCE_RETRIES = 3;
+
   for (let i = 0; i < commandsToProcess.length; i++) {
     const command = commandsToProcess[i];
-    let currentCommandAiResponse;
-
     const userMessageIndex = messages.value.findIndex(m => m.text === command && m.sender === 'user' && m.status === 'pending');
+
     if (userMessageIndex > -1) {
       messages.value[userMessageIndex].status = 'running';
     }
@@ -173,72 +174,60 @@ async function processCommandsAndGenerateTest(commandsToProcess, activeTab) {
       continue;
     }
 
-    await chrome.scripting.executeScript({
-      target: { tabId: activeTab.id },
-      files: ['content.js']
-    });
-    let currentCommandDOM = await chrome.tabs.sendMessage(activeTab.id, { action: "getDOM" });
-    try {
-      const response = await fetch(API_URL_INTERACT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dom: currentCommandDOM.outerHTML,
-          commandText: command,
-          apiKey: apiKey.value,
-        }),
-      });
+    let sequenceSuccess = false;
+    for (let attempt = 1; attempt <= MAX_SEQUENCE_RETRIES; attempt++) {
+      let currentCommandAiResponse;
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          files: ['content.js']
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`API Error: ${errorData.error || response.statusText}`);
-      }
+        const apiResponse = await attemptApiCall(command, activeTab);
+        currentCommandAiResponse = apiResponse;
 
-      const interactApiData = await response.json();
-      currentCommandAiResponse = interactApiData;
-
-    } catch (apiError) {
-      console.error("API error:", apiError);
-      addMessageToChat(`Error processing command "${command}": ${apiError.message}`, "bot", "red");
-      if (userMessageIndex > -1) {
-        messages.value[userMessageIndex].status = 'failed';
-      }
-      return null;
-    }
-
-    if (currentCommandAiResponse.action === 'assert') {
-      if(currentCommandAiResponse.success === true){
-        messages.value[userMessageIndex].status = 'success';
-      }
-      else{
-        messages.value[userMessageIndex].status = 'failed';
-      }
-    }
-    else if (currentCommandAiResponse) {
-      const actionData = currentCommandAiResponse;
-      if (actionData.error) {
-        addMessageToChat(`AI Error for "${command}": ${actionData.error}`, "bot");
-        if (userMessageIndex > -1) {
-          messages.value[userMessageIndex].status = 'failed';
+        if (currentCommandAiResponse.action === 'assert') {
+          if (currentCommandAiResponse.success) {
+            messages.value[userMessageIndex].status = 'success';
+          } else {
+            messages.value[userMessageIndex].status = 'failed';
+          }
+          sequenceSuccess = true;
+          break;
         }
-        return null;
-      } else {
-        const res = await chrome.tabs.sendMessage(activeTab.id, { action: "DOMAction", response: actionData });
-        if (res.error) {
-          addMessageToChat(`Execution error for "${command}": ${res.error}`, "bot", "red");
+
+        if (currentCommandAiResponse) {
+          const actionData = currentCommandAiResponse;
+          if (actionData.error) {
+            addMessageToChat(`AI Error for "${command}": ${actionData.error}`, "bot");
+            if (userMessageIndex > -1) messages.value[userMessageIndex].status = 'failed';
+            return null;
+          }
+
+          const res = await chrome.tabs.sendMessage(activeTab.id, { action: "DOMAction", response: actionData });
+          if (res.error) {
+            throw new Error(`DOM Interaction Error: ${res.error}`);
+          }
+
+          if (userMessageIndex > -1) {
+            messages.value[userMessageIndex].status = 'success';
+          }
+          sequenceSuccess = true;
+          break;
+        }
+      } catch (error) {
+        console.error(`Sequence attempt ${attempt} for command "${command}" failed:`, error);
+        if (attempt === MAX_SEQUENCE_RETRIES) {
+          addMessageToChat(`Error processing command "${command}" after ${MAX_SEQUENCE_RETRIES} attempts: ${error.message}`, "bot", "red");
           if (userMessageIndex > -1) {
             messages.value[userMessageIndex].status = 'failed';
           }
           return null;
-        } else {
-          if (userMessageIndex > -1) {
-            messages.value[userMessageIndex].status = 'success';
-          }
         }
       }
-    } else {
+    }
+
+    if (!sequenceSuccess) {
       addMessageToChat(`No action performed for "${command}" due to prior error or no AI directive.`, "bot", "orange");
       if (userMessageIndex > -1) {
         messages.value[userMessageIndex].status = 'failed';
@@ -271,6 +260,36 @@ async function processCommandsAndGenerateTest(commandsToProcess, activeTab) {
     addMessageToChat(`Error generating ${testType.value} test: ${apiError.message}`, "bot", "red");
   }
   return generateApiResult;
+}
+
+async function attemptApiCall(command, activeTab) {
+  const MAX_API_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_API_RETRIES; attempt++) {
+    try {
+      const currentCommandDOM = await chrome.tabs.sendMessage(activeTab.id, { action: "getDOM" });
+      const response = await fetch(API_URL_INTERACT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dom: currentCommandDOM.outerHTML,
+          commandText: command,
+          apiKey: apiKey.value,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`API Error: ${errorData.error || response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error(`API call attempt ${attempt} for command "${command}" failed:`, error);
+      if (attempt === MAX_API_RETRIES) {
+        throw error;
+      }
+    }
+  }
 }
 </script>
 
