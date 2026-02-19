@@ -1,0 +1,148 @@
+Your task is to generate Cypress autotest code based on the user's command and the provided DOM structure.
+
+Instructions:
+1. Analyze the user command and the provided DOM structure.
+2. Identify ONLY the target element based on the command.
+3. Generate the appropriate Cypress command to interact with the element. You MUST only generate Cypress code strictly for the provided command.
+DO NOT generate Cypress code for other parts of the DOM or unrelated fields.
+IMPORTANT: DO NOT add or assume any class, id, attribute, or state (like '.loading', '.active', ':hover', etc.) that is NOT present in the provided DOM into Cypress code.
+4. Output ONLY the Cypress code. Do NOT include any other text, explanations, or markdown.
+5. For SELECT elements, should use:
+   cy.get('selector').select('value');
+   For common elements (not input elements), prefer these custom commands:
+   - cy.getButton("Button Text")
+   - cy.getCheckbox("Label")
+   - cy.getDialog("Title or Label")
+   - cy.getMenuItem("Text")
+6. Select Elements:
+- For any command that selects a value from a dropdown (<select>), do NOT use the .select() command.
+- Instead, use the following format:
+    cy.get('select-selector').getMenuItem('Visible Option Text').then($option => {
+      cy.get('#select-selector').select($option.val());
+    });
+  where:
+    - 'select-selector' is the actual selector of the <select> tag (e.g., #select-province).
+    - 'Visible Option Text' is the text content of the <option> to be selected (e.g., 'Hà Nội').
+- You MUST always call .get() or cy.get() on the <select> element first, and then chain .getMenuItem(...).
+7. Add a .should('have.value', VALUE) check after each select action.
+8. ALWAYS ensure Cypress selectors target only **enabled** elements.
+
+   - Do not attempt to interact with any element that is disabled or marked as aria-disabled.
+   - If there are multiple matching elements, filter by enabled ones before applying index.
+9. For **input elements**, follow this priority to determine the selector method:
+    a. If there is a <label for="..."> that matches the input by id, use:
+       → cy.getInput("Label Text").type("...") — custom command using 'label'
+    b. Else if input has a 'placeholder', use:
+       → cy.getInput("Placeholder Text").type("...")
+       (custom command matched by placeholder)
+    c. If the input element has neither a matching label with 'for' nor a placeholder attribute, then fall back to using a standard Cypress selector targeting the element by id or class exactly as it appears in the DOM: cy.get('#id'), cy.get('.class')
+10. When the user command specifies the n-th element (e.g., "the 2nd button", or "the 3rd checkbox"):
+    - Use the :eq(n) selector to target the n-th element (0-based index).
+11. For commands that check element visibility or disabled status, generate Cypress assertions accordingly:
+
+To check if an element is visible:
+Use .should('be.visible')
+
+To check if an element is not visible:
+Use .should('not.be.visible')
+
+To check if an element is not disabled:
+Use .should('not.be.disabled')
+
+To check if an element is disabled:
+Use .should('be.disabled')
+
+Use the appropriate selector as per rules above (custom commands or cy.get() selectors).
+
+12.To verify selected option:
+- For commands check selected item in a select, checkbox, radio or menu like "check if 'Option Text' is selected in dropdown", use the following format:
+    cy.get('select-selector')
+      .getOptionValueByText('Option Text')
+      .then((value) => {
+        cy.get('select-selector').should('have.value', value);
+      });
+    Example:
+Command: select "Hà Nội" in select province dropdown  
+DOM:
+<select id="select-province" class="select-class">
+  <option value="1" id="option-1" class="option-class">Hải Dương</option>
+  <option value="2" id="option-2" class="option-class">Hải Phòng</option>
+  <option value="3" id="option-3" class="option-class">Hà Nội</option>
+</select>
+Code:
+cy.get('#select-province').getMenuItem('Hà Nội').then($option => {
+  cy.get('#select-province').select($option.val());
+});
+
+
+Command: click "Submit" button  
+DOM: <button id="submitBtn">Submit</button>  
+Code:  
+cy.getButton("Submit").click();
+
+Command:  type "Họ và tên" input with value "ExampleName"
+DOM:
+<label for="patientName">Họ và tên</label>
+<input id="patientName" type="text" />
+Code:
+cy.getInput("Họ và tên").type("John Doe");
+
+Command: type "Nhập họ và tên" input with value "ExampleName"
+DOM:
+<label>Thông tin</label>
+<input placeholder="Nhập họ và tên" type="text" name="address" />
+Code:
+cy.getInput("Nhập họ và tên").type("Hà Nội");
+
+Command: type "Bệnh đau đầu" into note textarea
+DOM:
+<textarea id="requestNote" name="note"></textarea>
+Code:
+cy.get('#requestNote').type("Bệnh đau đầu");
+
+Command: type into birthYear input with value "2000"
+DOM:
+<input id="birthYear" class="input-class" type="text" />
+Code:
+cy.get('#birthYear').type("2002");
+
+Command: check "I agree to terms" checkbox  
+DOM: <label><input type="checkbox" id="agreeTerms"> I agree to terms</label>  
+Code:  
+cy.getCheckbox("I agree to terms").check();
+
+Command: check if "Tiếp theo" button is visible
+DOM:
+<button id="nextBtn">Tiếp theo</button>
+Code:
+cy.getButton("Tiếp theo").should('be.visible');
+
+Command: "Select "Chọn giới tính" dropdown and choose option "Nam""
+DOM:
+<label for="patientSex">Giới tính</label>
+<select data-placeholder="Chọn giới tính"
+        class="form-control select2-hidden-accessible"
+        name="patientSex"
+        data-select2-id="select2-data-patientSex">
+  <option></option>
+  <option value="MALE">Nam</option>
+  <option value="FEMALE">Nữ</option>
+</select>
+
+<span class="selection">
+  <span class="select2-selection select2-selection--single" role="combobox" aria-haspopup="true">
+    <span class="select2-selection__rendered">Chọn giới tính</span>
+    <span class="select2-selection__arrow" role="presentation"></span>
+  </span>
+</span>
+Code: 
+cy.get('#patientSex').next().find('.select2-selection').click();
+cy.get('.select2-results__option').contains('Nam').click();
+
+---
+User Command: ${command}
+---
+DOM:
+\`\`\`html
+${minimizedDOM}
+\`\`\`

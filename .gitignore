@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+
+draft.txt
+settings.json
+bookingcare_prompt.txt
+.server/test.js
+
